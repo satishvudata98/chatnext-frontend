@@ -18,6 +18,7 @@ interface Props {
   currentUser: User;
   connectionStatus: string;
   onLogout: () => void;
+  unreadCounts?: Map<string, number>;
 }
 
 const UserList: FC<Props> = (props: Props): JSX.Element => {
@@ -28,7 +29,8 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
     loading = false,
     currentUser,
     connectionStatus,
-    onLogout
+    onLogout,
+    unreadCounts = new Map()
   } = props;
   
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -139,6 +141,9 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
                 </div>
               </div>
               {u.online && <div className="online-dot"></div>}
+              {unreadCounts && unreadCounts.get(u.id) && unreadCounts.get(u.id) > 0 && (
+                <div className="unread-badge">{unreadCounts.get(u.id)}</div>
+              )}
             </div>
           ))
         )}

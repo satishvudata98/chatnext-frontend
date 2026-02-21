@@ -33,6 +33,7 @@ const Chat: FC = (): JSX.Element | null => {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [websocket, setWebsocket] = useState<WebSocket | null>(null);
   const [showMobileChat, setShowMobileChat] = useState(false);
+  const [unreadCounts, setUnreadCounts] = useState<Map<string, number>>(new Map());
   
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -139,9 +140,34 @@ const Chat: FC = (): JSX.Element | null => {
           if (data.type === "message") {
             // Message will be handled by ChatWindow component
             // Dispatch custom event so ChatWindow can update
-            window.dispatchEvent(
+            globalThis.dispatchEvent(
               new CustomEvent("websocket:message", { detail: data })
             );
+          }
+
+          if (data.type === "message_delivered") {
+            // Message delivery status update
+            globalThis.dispatchEvent(
+              new CustomEvent("websocket:message_delivered", { detail: data })
+            );
+          }
+
+          if (data.type === "message_seen") {
+            // Message seen status update
+            globalThis.dispatchEvent(
+              new CustomEvent("websocket:message_seen", { detail: data })
+            );
+          }
+
+          if (data.type === "unread_count_update") {
+            // Update unread count for conversation, keyed by the sender's user ID
+            setUnreadCounts((prev: Map<string, number>) => {
+              const updated = new Map(prev);
+              if (data.fromUserId) {
+                updated.set(data.fromUserId, data.count);
+              }
+              return updated;
+            });
           }
           
           if (data.type === "error") {
@@ -235,7 +261,24 @@ const Chat: FC = (): JSX.Element | null => {
     try {
       const data = await getOrCreateConversation(selectedUserData.id);
       const typedData = data as { conversation: { id: string } };
-      setSelectedConversationId(typedData.conversation.id);
+      const conversationId = typedData.conversation.id;
+      setSelectedConversationId(conversationId);
+      
+      // Clear unread count for this user
+      setUnreadCounts((prev: Map<string, number>) => {
+        const updated = new Map(prev);
+        updated.delete(selectedUserData.id);
+        return updated;
+      });
+
+      // Notify backend that user is viewing this conversation
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify({
+          type: "message_seen",
+          conversationId: conversationId,
+          messageIds: []
+        }));
+      }
     } catch (err) {
       console.error("Error getting conversation:", err);
       setError("Failed to load conversation");
@@ -280,6 +323,7 @@ const Chat: FC = (): JSX.Element | null => {
           currentUser={user}
           connectionStatus={connectionStatus}
           onLogout={handleLogout}
+          unreadCounts={unreadCounts}
         />
       </div>
       

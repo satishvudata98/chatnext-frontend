@@ -19,6 +19,7 @@ interface Message {
   message: string;
   isRead: boolean;
   createdAt: number;
+  status?: string;
 }
 
 interface Props {
@@ -65,6 +66,7 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
         fromUsername: string;
         message: string;
         createdAt: number;
+        status?: string;
       }>;
       const data = customEvent.detail;
       
@@ -88,7 +90,8 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
               fromUsername: data.fromUsername,
               message: data.message,
               isRead: false,
-              createdAt: data.createdAt
+              createdAt: data.createdAt,
+              status: data.status || "sent"
             };
             return updatedMessages;
           } else {
@@ -100,17 +103,68 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
               fromUsername: data.fromUsername,
               message: data.message,
               isRead: false,
-              createdAt: data.createdAt
+              createdAt: data.createdAt,
+              status: data.status || "sent"
             };
             return [...prev, newMessage];
           }
         });
       }
     };
+
+    const handleMessageDelivered = (event: Event): void => {
+      const customEvent = event as CustomEvent<{
+        messageId: string;
+        conversationId: string;
+        deliveredAt: number;
+      }>;
+      const data = customEvent.detail;
+
+      if (data.conversationId === conversationId) {
+        setMessages((prev: Message[]): Message[] =>
+          prev.map((msg: Message): Message =>
+            msg.id === data.messageId ? { ...msg, status: "delivered" } : msg
+          )
+        );
+      }
+    };
+
+    const handleMessageSeen = (event: Event): void => {
+      const customEvent = event as CustomEvent<{
+        conversationId: string;
+        userId: string;
+        seenAt: number;
+        messageIds: string[];
+      }>;
+      const data = customEvent.detail;
+
+      if (data.conversationId === conversationId) {
+        setMessages((prev: Message[]): Message[] =>
+          prev.map((msg: Message): Message => {
+            // Update messages that were marked as seen by the other user
+            if (!msg.id.startsWith("temp-") && data.messageIds.length > 0) {
+              return data.messageIds.includes(msg.id)
+                ? { ...msg, status: "seen" }
+                : msg;
+            } else if (data.messageIds.length === 0) {
+              // All messages in conversation marked as seen
+              return { ...msg, status: "seen" };
+            }
+            return msg;
+          })
+        );
+      }
+    };
     
-    window.addEventListener("websocket:message", handleWebSocketMessage);
-    return (): void =>
-      window.removeEventListener("websocket:message", handleWebSocketMessage);
+    globalThis.addEventListener("websocket:message", handleWebSocketMessage);
+    globalThis.addEventListener("websocket:message_delivered", handleMessageDelivered);
+    globalThis.addEventListener("websocket:message_seen", handleMessageSeen);
+
+    return (): void => {
+      globalThis.removeEventListener("websocket:message", handleWebSocketMessage);
+      globalThis.removeEventListener("websocket:message_delivered", handleMessageDelivered);
+      globalThis.removeEventListener("websocket:message_seen", handleMessageSeen);
+    };
   }, [conversationId, user.id]);
   
   // Load message history when conversation is selected
@@ -129,9 +183,19 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
             fromUsername: msg.users?.username || "Unknown",
             message: msg.message,
             isRead: false,
-            createdAt: msg.created_at
+            createdAt: msg.created_at,
+            status: msg.status || "sent"
           }));
           setMessages(transformedMessages);
+
+          // Send message_seen event for all messages in this conversation
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: "message_seen",
+              conversationId: conversationId,
+              messageIds: []
+            }));
+          }
         }
       } catch (err) {
         console.error("Error fetching messages:", err);
@@ -139,7 +203,7 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
         setLoading(false);
       }
     })();
-  }, [conversationId]);
+  }, [conversationId, ws]);
   
   const send = (e?: FormEvent<HTMLFormElement>): void => {
     if (e) {
@@ -243,6 +307,7 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
               timestamp={m.createdAt}
               username={m.fromUsername}
               formatTime={formatTime}
+              status={m.status}
             />
           ))
         )}
