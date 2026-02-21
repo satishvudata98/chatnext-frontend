@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import type { FC } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import UserList from "../components/UserList";
 import ChatWindow from "../components/ChatWindow";
 import { config } from "../config/config";
@@ -24,7 +24,7 @@ const Chat: FC = (): JSX.Element | null => {
     const userStr = localStorage.getItem("user");
     return userStr ? JSON.parse(userStr) : null;
   }, []);
-
+  
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -32,25 +32,26 @@ const Chat: FC = (): JSX.Element | null => {
   const [error, setError] = useState("");
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [websocket, setWebsocket] = useState<WebSocket | null>(null);
-
+  const [showMobileChat, setShowMobileChat] = useState(false);
+  
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
   const maxReconnectAttempts = 5;
   const intentionalCloseRef = useRef<boolean>(false);
-
+  
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!token || !user) {
       navigate("/login");
       return;
     }
-  }, [navigate]);
-
+  }, [navigate, token, user]);
+  
   // Fetch users list
   useEffect(() => {
     if (!token) return;
-
+    
     (async (): Promise<void> => {
       setLoadingUsers(true);
       try {
@@ -65,15 +66,18 @@ const Chat: FC = (): JSX.Element | null => {
       }
     })();
   }, [token]);
-
+  
   const connectWebSocket = (): void => {
     if (!token || !user) return;
-
+    
     // Close any existing connection first
     if (wsRef.current) {
       try {
         intentionalCloseRef.current = true;
-        if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
+        if (
+          wsRef.current.readyState === WebSocket.OPEN ||
+          wsRef.current.readyState === WebSocket.CONNECTING
+        ) {
           wsRef.current.onopen = null;
           wsRef.current.onclose = null;
           wsRef.current.onerror = null;
@@ -86,7 +90,7 @@ const Chat: FC = (): JSX.Element | null => {
       wsRef.current = null;
       intentionalCloseRef.current = false;
     }
-
+    
     try {
       const wsUrl = config.getWebSocketUrl();
       const ws = new WebSocket(wsUrl);
@@ -100,9 +104,9 @@ const Chat: FC = (): JSX.Element | null => {
           attemptReconnect();
         }
       }, 5000); // 5 second timeout
-
+      
       wsRef.current = ws;
-
+      
       ws.onopen = () => {
         clearTimeout(connectionTimeout);
         console.log("WebSocket connected");
@@ -114,15 +118,15 @@ const Chat: FC = (): JSX.Element | null => {
         // Send authentication with token
         ws.send(JSON.stringify({ type: "connect", token }));
       };
-
+      
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
-
+          
           if (data.type === "connected") {
             console.log("Authenticated with server");
           }
-
+          
           if (data.type === "user_status") {
             // Update user online status
             setUsers((prevUsers: User[]): User[] =>
@@ -131,7 +135,7 @@ const Chat: FC = (): JSX.Element | null => {
               )
             );
           }
-
+          
           if (data.type === "message") {
             // Message will be handled by ChatWindow component
             // Dispatch custom event so ChatWindow can update
@@ -139,7 +143,7 @@ const Chat: FC = (): JSX.Element | null => {
               new CustomEvent("websocket:message", { detail: data })
             );
           }
-
+          
           if (data.type === "error") {
             console.error("Server error:", data.message);
             setError(data.message);
@@ -148,13 +152,13 @@ const Chat: FC = (): JSX.Element | null => {
           console.error("Error parsing message:", err);
         }
       };
-
+      
       ws.onerror = (err: Event) => {
         console.error("WebSocket error:", err);
         setConnectionStatus("error");
         setError("Connection error. Reconnecting...");
       };
-
+      
       ws.onclose = () => {
         console.log("WebSocket closed");
         setConnectionStatus("disconnected");
@@ -170,31 +174,31 @@ const Chat: FC = (): JSX.Element | null => {
       attemptReconnect();
     }
   };
-
+  
   const attemptReconnect = () => {
     if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
       setError("Could not connect to server. Please refresh the page.");
       return;
     }
-
+    
     reconnectAttemptsRef.current += 1;
     const delay = Math.min(
       1000 * Math.pow(2, reconnectAttemptsRef.current - 1),
       10000
     );
-
+    
     reconnectTimeoutRef.current = setTimeout(() => {
       setConnectionStatus("reconnecting");
       connectWebSocket();
     }, delay);
   };
-
+  
   // Connect WebSocket on mount
   useEffect(() => {
     if (!token || !user) return;
-
+    
     connectWebSocket();
-
+    
     return () => {
       intentionalCloseRef.current = true;
       if (reconnectTimeoutRef.current) {
@@ -208,7 +212,10 @@ const Chat: FC = (): JSX.Element | null => {
           wsRef.current.onclose = null;
           wsRef.current.onerror = null;
           wsRef.current.onmessage = null;
-          if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
+          if (
+            wsRef.current.readyState === WebSocket.OPEN ||
+            wsRef.current.readyState === WebSocket.CONNECTING
+          ) {
             wsRef.current.close(1000, "Cleanup");
           }
         } catch (err) {
@@ -217,11 +224,14 @@ const Chat: FC = (): JSX.Element | null => {
         wsRef.current = null;
       }
     };
-  }, []);
-
+  }, [token, user]);
+  
   // Handle user selection
-  const handleSelectUser = async (selectedUserData: User): Promise<void> => {
+  const handleSelectUser = async (
+    selectedUserData: User
+  ): Promise<void> => {
     setSelectedUser(selectedUserData);
+    setShowMobileChat(true);
     try {
       const data = await getOrCreateConversation(selectedUserData.id);
       const typedData = data as { conversation: { id: string } };
@@ -231,7 +241,11 @@ const Chat: FC = (): JSX.Element | null => {
       setError("Failed to load conversation");
     }
   };
-
+  
+  const handleBackToList = (): void => {
+    setShowMobileChat(false);
+  };
+  
   const handleLogout = (): void => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -241,61 +255,67 @@ const Chat: FC = (): JSX.Element | null => {
     }
     navigate("/");
   };
-
+  
   if (!token || !user) {
     return null;
   }
-
+  
   return (
     <div className="chat-container">
-      <UserList
-        users={users}
-        selectedUser={selectedUser}
-        onSelect={handleSelectUser}
-        loading={loadingUsers}
-      />
-
-      <div className="chat-main">
-        {connectionStatus === "connected" && selectedUser && selectedConversationId && websocket ? (
+      {error && (
+        <div className="error-banner">
+          <span>{error}</span>
+          <button onClick={() => setError("")} className="error-close">×</button>
+        </div>
+      )}
+      
+      <div
+        className={`sidebar-wrapper ${showMobileChat ? "hide-mobile" : ""}`}
+      >
+        <UserList
+          users={users}
+          selectedUser={selectedUser}
+          onSelect={handleSelectUser}
+          loading={loadingUsers}
+          currentUser={user}
+          connectionStatus={connectionStatus}
+          onLogout={handleLogout}
+        />
+      </div>
+      
+      <div
+        className={`chat-wrapper ${showMobileChat ? "show-mobile" : ""}`}
+      >
+        {connectionStatus === "connected" &&
+        selectedUser &&
+        selectedConversationId &&
+        websocket ? (
           <ChatWindow
             user={user}
             selectedUser={selectedUser}
             conversationId={selectedConversationId}
             ws={websocket}
+            onBack={handleBackToList}
           />
+        ) : selectedUser ? (
+          <div className="chat-loading">
+            <div className="loading-spinner"></div>
+            <p>Loading chat...</p>
+          </div>
         ) : (
-          <div className="connection-status">
-            <div className={`status-indicator ${connectionStatus}`}></div>
-            <p>
-              {connectionStatus === "connecting" && "Connecting..."}
-              {connectionStatus === "disconnected" && "Disconnected. Reconnecting..."}
-              {connectionStatus === "reconnecting" && "Reconnecting..."}
-              {connectionStatus === "error" && "Connection Error"}
-              {!selectedUser && connectionStatus === "connected" && "Select a user to start chatting"}
-            </p>
-            {error && <p className="error-text">{error}</p>}
+          <div className="chat-empty">
+            <div className="empty-content">
+              <div className="empty-icon">💬</div>
+              <h2>ChatNext Web</h2>
+              <p>
+                Send and receive messages in real-time.
+              </p>
+              <p className="empty-hint">
+                Select a contact from the sidebar to start chatting
+              </p>
+            </div>
           </div>
         )}
-      </div>
-
-      <div className="user-panel">
-        <div className="user-info">
-          <div className="user-avatar-lg">
-            {user.username.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <h4>{user.username}</h4>
-            <span className={`status-badge ${connectionStatus}`}>
-              {connectionStatus === "connected" && "● Online"}
-              {connectionStatus === "disconnected" && "● Offline"}
-              {connectionStatus === "connecting" && "● Connecting"}
-              {connectionStatus === "reconnecting" && "● Reconnecting"}
-            </span>
-          </div>
-        </div>
-        <button onClick={handleLogout} className="logout-btn">
-          Logout
-        </button>
       </div>
     </div>
   );
