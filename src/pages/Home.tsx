@@ -9,7 +9,7 @@ export default function Home() {
       <div className="home-card">
         <div className="logo-section">
           <div className="logo-icon">💬</div>
-          <h1 className="logo">ChatNest</h1>
+          <h1 className="logo">ChatNext</h1>
           <p className="tagline">Real-time messaging made simple</p>
         </div>
 

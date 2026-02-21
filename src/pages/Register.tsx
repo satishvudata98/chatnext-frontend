@@ -68,7 +68,7 @@ const Register: FC = (): JSX.Element => {
       <div className="auth-card">
         <div className="auth-header">
           <h2>Create Account</h2>
-          <p>Join ChatNest and start messaging</p>
+          <p>Join ChatNext and start messaging</p>
         </div>
 
         <form onSubmit={handleRegister} className="auth-form">
