@@ -152,6 +152,8 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
               createdAt: data.createdAt,
               status: data.status || "sent"
             };
+            // Sort messages by timestamp after replacement
+            updatedMessages.sort((a, b) => a.createdAt - b.createdAt);
             return updatedMessages;
           } else {
             // New message from other user
@@ -166,7 +168,10 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
               createdAt: data.createdAt,
               status: data.status || "sent"
             };
-            return [...prev, newMessage];
+            const updatedMessages = [...prev, newMessage];
+            // Sort messages by timestamp after adding new message
+            updatedMessages.sort((a, b) => a.createdAt - b.createdAt);
+            return updatedMessages;
           }
         });
       }
@@ -271,6 +276,10 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
               };
             })
           );
+          
+          // Sort messages by createdAt timestamp
+          transformedMessages.sort((a, b) => a.createdAt - b.createdAt);
+          
           setMessages(transformedMessages);
 
           // Send message_seen event for all messages in this conversation

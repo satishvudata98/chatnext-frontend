@@ -194,3 +194,19 @@ export async function storeEncryptedPrivateKey(encryptedKeyData: {
 export async function fetchEncryptedPrivateKey() {
   return apiRequest("/api/user/encrypted-private-key", "GET");
 }
+
+// Conversation Keys Management APIs (for cross-device support)
+export async function storeConversationKeyOnServer(conversationId: string, encryptedKeyData: {
+  encryptedKey: string;
+  salt: string;
+  iv: string;
+}) {
+  return apiRequest("/api/user/conversation-keys", "POST", {
+    conversationId,
+    ...encryptedKeyData,
+  });
+}
+
+export async function fetchConversationKeysFromServer() {
+  return apiRequest("/api/user/conversation-keys", "GET");
+}

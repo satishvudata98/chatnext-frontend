@@ -5,7 +5,7 @@ import UserList from "../components/UserList";
 import ChatWindow from "../components/ChatWindow";
 import { config } from "../config/config";
 import { fetchUsers, getOrCreateConversation, updatePublicKey, fetchEncryptedPrivateKey } from "../api/api";
-import { initializeE2EE, getUserPublicKey, decryptPrivateKeyWithPassword, loadUserKeyPair } from "../utils/crypto";
+import { initializeE2EE, getUserPublicKey, restoreKeyPairFromServer, storeUserKeyPair } from "../utils/crypto";
 import "../styles/chat.css";
 
 interface User {
@@ -54,54 +54,64 @@ const Chat: FC = (): JSX.Element | null => {
     (async (): Promise<void> => {
       try {
         // Check if we need to restore encrypted private key from server
-        const existingKey = await loadUserKeyPair();
-        if (!existingKey) {
+        let keyPair = await initializeE2EE();
+        
+        // If we just generated a new key (not loaded from localStorage), 
+        // try to see if we actually had one on the server
+        const hasSavedKey = localStorage.getItem("e2ee_user_keypair");
+        
+        if (!hasSavedKey) {
           // Try to fetch and decrypt encrypted private key from server
           const password = sessionStorage.getItem("tempPassword");
+          
           if (password) {
             try {
               const encryptedData = await fetchEncryptedPrivateKey();
+              
               const typedData = encryptedData as { 
                 success?: boolean; 
                 encryptedKey?: string; 
                 salt?: string; 
                 iv?: string;
+                publicKey?: string;
               };
               
-              if (typedData.encryptedKey && typedData.salt && typedData.iv) {
-                // Decrypt the private key
-                await decryptPrivateKeyWithPassword(
+              if (typedData.encryptedKey && typedData.salt && typedData.iv && typedData.publicKey) {
+                // Restore the complete keypair from encrypted data
+                keyPair = await restoreKeyPairFromServer(
                   typedData.encryptedKey,
                   typedData.salt,
                   typedData.iv,
+                  typedData.publicKey,
                   password
                 );
                 
-                // First generate or load complete keypair
-                let keyPair = await loadUserKeyPair();
-                if (!keyPair) {
-                  // Need to initialize properly - this shouldn't happen but fallback
-                  await initializeE2EE();
-                  keyPair = await loadUserKeyPair();
-                }
+                // Store the restored keypair in localStorage for future use
+                await storeUserKeyPair(keyPair);
+              } else {
+                console.warn("[E2EE] Missing required fields in encrypted data response");
               }
             } catch (error) {
-              console.error("Failed to restore encrypted private key from server:", error);
+              console.error("[E2EE] Failed to restore encrypted private key from server:", error);
+              // This is okay - we just generated a new one above
             }
             
             // Clear temporary password from session
             sessionStorage.removeItem("tempPassword");
+          } else {
+            console.log("[E2EE] No password in sessionStorage, cannot restore from server");
           }
+        } else {
+          console.log("[E2EE] Using existing saved keypair from localStorage");
         }
 
-        // Initialize E2EE normally (generates key if needed)
-        await initializeE2EE();
+        // Upload public key to server
         const publicKey = await getUserPublicKey();
         if (publicKey) {
           await updatePublicKey(publicKey);
         }
       } catch (error) {
-        console.error("Failed to initialize E2EE:", error);
+        console.error("[E2EE] ✗ Failed to initialize E2EE:", error);
         setError("Failed to initialize encryption");
       }
     })();

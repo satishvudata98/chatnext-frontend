@@ -141,7 +141,7 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
                 </div>
               </div>
               {u.online && <div className="online-dot"></div>}
-              {unreadCounts && unreadCounts.get(u.id) && unreadCounts.get(u.id) > 0 && (
+              {unreadCounts && unreadCounts.get(u.id) && unreadCounts.get(u.id)! > 0 && selectedUser?.id !== u.id && (
                 <div className="unread-badge">{unreadCounts.get(u.id)}</div>
               )}
             </div>
