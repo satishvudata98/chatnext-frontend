@@ -30,6 +30,11 @@ const Login: FC = (): JSX.Element => {
         localStorage.setItem("accessToken", loginData.accessToken);
         localStorage.setItem("refreshToken", loginData.refreshToken);
         localStorage.setItem("user", JSON.stringify(loginData.user));
+        
+        // Store password temporarily in sessionStorage for E2EE key recovery
+        // This allows Chat.tsx to decrypt the encrypted private key from server
+        sessionStorage.setItem("tempPassword", password);
+        
         // Dispatch event to tell App.tsx to skip verification and set authenticated immediately
         globalThis.dispatchEvent(new Event("loginSuccess"));
         // Small delay to ensure event listeners are triggered before navigation

@@ -181,3 +181,16 @@ export async function updatePublicKey(publicKey: string) {
 export async function getUserPublicKey(userId: string) {
   return apiRequest(`/api/user/public-key?userId=${encodeURIComponent(userId)}`, "GET");
 }
+
+// Encrypted Private Key Management APIs
+export async function storeEncryptedPrivateKey(encryptedKeyData: {
+  encryptedKey: string;
+  salt: string;
+  iv: string;
+}) {
+  return apiRequest("/api/user/encrypted-private-key", "POST", encryptedKeyData);
+}
+
+export async function fetchEncryptedPrivateKey() {
+  return apiRequest("/api/user/encrypted-private-key", "GET");
+}

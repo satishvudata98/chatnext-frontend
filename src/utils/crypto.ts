@@ -329,3 +329,108 @@ export async function loadConversationKeyForDecryption(conversationId: string): 
     return null;
   }
 }
+
+/**
+ * Derive encryption key from password for securing private key
+ */
+async function derivePasswordKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const passwordData = encoder.encode(password);
+
+  const baseKey = await crypto.subtle.importKey(
+    'raw',
+    passwordData,
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+
+  return crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      hash: 'SHA-256',
+      salt: salt as BufferSource,
+      iterations: 100000,
+    },
+    baseKey,
+    {
+      name: 'AES-GCM',
+      length: 256,
+    },
+    true,
+    ['encrypt', 'decrypt']
+  );
+}
+
+/**
+ * Encrypt private key with password for server storage
+ */
+export async function encryptPrivateKeyWithPassword(
+  privateKey: CryptoKey,
+  password: string
+): Promise<{ encryptedKey: string; salt: string; iv: string }> {
+  // Generate random salt
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+
+  // Derive encryption key from password
+  const passwordKey = await derivePasswordKey(password, salt);
+
+  // Export private key
+  const exportedPrivateKey = await crypto.subtle.exportKey('pkcs8', privateKey);
+
+  // Encrypt private key
+  const encryptedData = await crypto.subtle.encrypt(
+    {
+      name: 'AES-GCM',
+      iv: iv,
+    },
+    passwordKey,
+    exportedPrivateKey
+  );
+
+  return {
+    encryptedKey: btoa(String.fromCharCode(...new Uint8Array(encryptedData))),
+    salt: btoa(String.fromCharCode(...salt)),
+    iv: btoa(String.fromCharCode(...iv)),
+  };
+}
+
+/**
+ * Decrypt private key with password from server storage
+ */
+export async function decryptPrivateKeyWithPassword(
+  encryptedKeyBase64: string,
+  saltBase64: string,
+  ivBase64: string,
+  password: string
+): Promise<CryptoKey> {
+  const salt = Uint8Array.from(atob(saltBase64), c => c.charCodeAt(0));
+  const iv = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
+  const encryptedData = Uint8Array.from(atob(encryptedKeyBase64), c => c.charCodeAt(0));
+
+  // Derive encryption key from password
+  const passwordKey = await derivePasswordKey(password, salt);
+
+  // Decrypt private key
+  const decryptedData = await crypto.subtle.decrypt(
+    {
+      name: 'AES-GCM',
+      iv: iv,
+    },
+    passwordKey,
+    encryptedData
+  );
+
+  // Import decrypted private key
+  return crypto.subtle.importKey(
+    'pkcs8',
+    decryptedData,
+    {
+      name: 'ECDH',
+      namedCurve: 'P-256',
+    },
+    true,
+    ['deriveKey', 'deriveBits']
+  );
+}

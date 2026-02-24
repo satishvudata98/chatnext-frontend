@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { FC, ChangeEvent, FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { registerApi } from "../api/api";
+import { registerApi, storeEncryptedPrivateKey } from "../api/api";
+import { generateUserKeyPair, storeUserKeyPair, encryptPrivateKeyWithPassword } from "../utils/crypto";
 import "../styles/auth.css";
 
 const Register: FC = (): JSX.Element => {
@@ -47,6 +48,27 @@ const Register: FC = (): JSX.Element => {
         localStorage.setItem("accessToken", loginData.accessToken);
         localStorage.setItem("refreshToken", loginData.refreshToken);
         localStorage.setItem("user", JSON.stringify(loginData.user));
+        
+        // Store password temporarily in sessionStorage for E2EE key recovery
+        sessionStorage.setItem("tempPassword", password);
+        
+        // Generate E2EE keypair and encrypt private key with password
+        try {
+          const keyPair = await generateUserKeyPair();
+          await storeUserKeyPair(keyPair);
+          
+          // Encrypt private key with password for server storage
+          const encryptedKeyData = await encryptPrivateKeyWithPassword(keyPair.privateKey, password);
+          
+          // Send encrypted private key to server
+          await storeEncryptedPrivateKey(encryptedKeyData);
+          
+          console.log("✓ Encrypted private key stored on server");
+        } catch (e2eeError) {
+          console.error("Warning: Failed to setup E2EE:", e2eeError);
+          // Don't block registration if E2EE fails, user can still chat
+        }
+        
         // Dispatch event to tell App.tsx to skip verification and set authenticated immediately
         globalThis.dispatchEvent(new Event("loginSuccess"));
         // Small delay to ensure event listeners are triggered before navigation

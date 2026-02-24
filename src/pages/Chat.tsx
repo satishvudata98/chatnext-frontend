@@ -4,8 +4,8 @@ import { useNavigate } from "react-router";
 import UserList from "../components/UserList";
 import ChatWindow from "../components/ChatWindow";
 import { config } from "../config/config";
-import { fetchUsers, getOrCreateConversation, updatePublicKey } from "../api/api";
-import { initializeE2EE, getUserPublicKey } from "../utils/crypto";
+import { fetchUsers, getOrCreateConversation, updatePublicKey, fetchEncryptedPrivateKey } from "../api/api";
+import { initializeE2EE, getUserPublicKey, decryptPrivateKeyWithPassword, loadUserKeyPair } from "../utils/crypto";
 import "../styles/chat.css";
 
 interface User {
@@ -53,6 +53,48 @@ const Chat: FC = (): JSX.Element | null => {
     // Initialize E2EE
     (async (): Promise<void> => {
       try {
+        // Check if we need to restore encrypted private key from server
+        const existingKey = await loadUserKeyPair();
+        if (!existingKey) {
+          // Try to fetch and decrypt encrypted private key from server
+          const password = sessionStorage.getItem("tempPassword");
+          if (password) {
+            try {
+              const encryptedData = await fetchEncryptedPrivateKey();
+              const typedData = encryptedData as { 
+                success?: boolean; 
+                encryptedKey?: string; 
+                salt?: string; 
+                iv?: string;
+              };
+              
+              if (typedData.encryptedKey && typedData.salt && typedData.iv) {
+                // Decrypt the private key
+                await decryptPrivateKeyWithPassword(
+                  typedData.encryptedKey,
+                  typedData.salt,
+                  typedData.iv,
+                  password
+                );
+                
+                // First generate or load complete keypair
+                let keyPair = await loadUserKeyPair();
+                if (!keyPair) {
+                  // Need to initialize properly - this shouldn't happen but fallback
+                  await initializeE2EE();
+                  keyPair = await loadUserKeyPair();
+                }
+              }
+            } catch (error) {
+              console.error("Failed to restore encrypted private key from server:", error);
+            }
+            
+            // Clear temporary password from session
+            sessionStorage.removeItem("tempPassword");
+          }
+        }
+
+        // Initialize E2EE normally (generates key if needed)
         await initializeE2EE();
         const publicKey = await getUserPublicKey();
         if (publicKey) {
