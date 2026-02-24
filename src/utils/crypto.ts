@@ -71,20 +71,36 @@ export async function restoreKeyPairFromServer(
   password: string
 ): Promise<KeyPair> {
   try {
+    console.log("[RESTORE_SERVER] Starting restore from server...");
+    console.log("[RESTORE_SERVER] Input validation:", {
+      hasEncryptedKey: !!encryptedKeyBase64,
+      hasSalt: !!saltBase64,
+      hasIv: !!ivBase64,
+      hasPublicKey: !!publicKeyBase64,
+      hasPassword: !!password,
+      passwordLength: password?.length || 0,
+    });
+
     // Decrypt the private key
+    console.log("[RESTORE_SERVER] Decrypting private key from server...");
     const privateKey = await decryptPrivateKeyWithPassword(
       encryptedKeyBase64,
       saltBase64,
       ivBase64,
       password
     );
+    console.log("[RESTORE_SERVER] ✓ Private key decrypted");
 
     // Create full KeyPair with both keys
+    console.log("[RESTORE_SERVER] Restoring full keypair...");
     const keyPair = await restoreKeyPairFromDecrypted(privateKey, publicKeyBase64);
+    console.log("[RESTORE_SERVER] ✓ Keypair restoration complete");
     
     return keyPair;
   } catch (error) {
     console.error("[RESTORE_SERVER] ✗ Restoration failed:", error);
+    console.error("[RESTORE_SERVER] Error type:", (error as Error).name);
+    console.error("[RESTORE_SERVER] Error message:", (error as Error).message);
     throw error;
   }
 }
@@ -102,8 +118,14 @@ export async function exportPublicKey(publicKey: CryptoKey): Promise<string> {
  */
 export async function importPublicKey(publicKeyBase64: string): Promise<CryptoKey> {
   try {
-  
+    console.log("[IMPORT_PUBLIC_KEY] Importing public key from base64...");
+    console.log("[IMPORT_PUBLIC_KEY] Input:", {
+      hasKeyData: !!publicKeyBase64,
+      dataLength: publicKeyBase64?.length || 0,
+    });
+
     const publicKeyData = Uint8Array.from(atob(publicKeyBase64), c => c.charCodeAt(0));
+    console.log("[IMPORT_PUBLIC_KEY] Decoded size:", publicKeyData.length);
 
     const publicKey = await crypto.subtle.importKey(
       'spki',
@@ -115,9 +137,12 @@ export async function importPublicKey(publicKeyBase64: string): Promise<CryptoKe
       true,
       []
     );
+    console.log("[IMPORT_PUBLIC_KEY] ✓ Public key imported successfully");
     return publicKey;
   } catch (error) {
     console.error("[IMPORT_PUBLIC_KEY] ✗ Import failed:", error);
+    console.error("[IMPORT_PUBLIC_KEY] Error type:", (error as Error).name);
+    console.error("[IMPORT_PUBLIC_KEY] Error message:", (error as Error).message);
     throw error;
   }
 }
@@ -198,10 +223,25 @@ export async function decryptMessage(
   key: CryptoKey
 ): Promise<string> {
   try {
+    console.log("[DECRYPT_MSG] Starting message decryption...");
+    console.log("[DECRYPT_MSG] Input validation:", {
+      hasCiphertext: !!encryptedMessage.ciphertext,
+      ciphertextLength: encryptedMessage.ciphertext?.length || 0,
+      hasIv: !!encryptedMessage.iv,
+      ivLength: encryptedMessage.iv?.length || 0,
+      hasKey: !!key,
+      keyId: encryptedMessage.keyId,
+    });
 
     const ciphertext = Uint8Array.from(atob(encryptedMessage.ciphertext), c => c.charCodeAt(0));
     const iv = Uint8Array.from(atob(encryptedMessage.iv), c => c.charCodeAt(0));
 
+    console.log("[DECRYPT_MSG] Decoded sizes:", {
+      ciphertextSize: ciphertext.length,
+      ivSize: iv.length,
+    });
+
+    console.log("[DECRYPT_MSG] Attempting AES-GCM decryption...");
     const decrypted = await crypto.subtle.decrypt(
       {
         name: 'AES-GCM',
@@ -211,9 +251,11 @@ export async function decryptMessage(
       ciphertext
     );
 
+    console.log("[DECRYPT_MSG] ✓ Decryption successful, decrypted size:", decrypted.byteLength);
 
     const decoder = new TextDecoder();
     const result = decoder.decode(decrypted);
+    console.log("[DECRYPT_MSG] ✓ Message decoded, length:", result.length);
     return result;
   } catch (error) {
     console.error("[DECRYPT_MSG] ✗ Decryption failed:", error);
@@ -347,12 +389,14 @@ export async function establishConversationKey(
   otherPublicKeyBase64: string
 ): Promise<CryptoKey> {
   try {
+    console.log("[ESTABLISH_CONV_KEY] Establishing conversation key for:", conversationId);
 
     const userKeyPair = await loadUserKeyPair();
     if (!userKeyPair) throw new Error('User key pair not found');
 
     const otherPublicKey = await importPublicKey(otherPublicKeyBase64);
     const sharedKey = await deriveSharedSecret(userKeyPair.privateKey, otherPublicKey);
+    console.log("[ESTABLISH_CONV_KEY] ✓ Shared key derived");
 
     // Store the key locally for immediate use
     const exportedKey = await crypto.subtle.exportKey('raw', sharedKey);
@@ -362,14 +406,17 @@ export async function establishConversationKey(
       createdAt: Date.now(),
     };
     storeConversationKey(conversationId, storedKey);
+    console.log("[ESTABLISH_CONV_KEY] ✓ Key stored locally");
 
     // Also store encrypted version on server for cross-device support
     try {
       const tempPassword = sessionStorage.getItem("tempPassword");
       if (tempPassword) {
+        console.log("[ESTABLISH_CONV_KEY] Storing key on server...");
         const encryptedKeyData = await encryptConversationKeyWithPassword(exportedKey, tempPassword);
         const { storeConversationKeyOnServer } = await import("../api/api");
         await storeConversationKeyOnServer(conversationId, encryptedKeyData);
+        console.log("[ESTABLISH_CONV_KEY] ✓ Key stored on server");
       } else {
         console.log("[ESTABLISH_CONV_KEY] No temp password available, skipping server storage");
       }
@@ -390,18 +437,23 @@ export async function establishConversationKey(
  */
 export async function loadConversationKeyForDecryption(conversationId: string): Promise<CryptoKey | null> {
   try {
+    console.log("[LOAD_CONV_KEY] Loading conversation key for:", conversationId);
 
     const stored = localStorage.getItem(CONVERSATION_KEYS_KEY);
+    console.log("[LOAD_CONV_KEY] Stored keys found:", !!stored);
 
     if (!stored) {
+      console.log("[LOAD_CONV_KEY] ✗ No conversation keys in localStorage, trying server...");
 
       // Try to load from server
       try {
         const tempPassword = sessionStorage.getItem("tempPassword");
         if (!tempPassword) {
+          console.log("[LOAD_CONV_KEY] No temp password available for server decryption");
           return null;
         }
 
+        console.log("[LOAD_CONV_KEY] Fetching keys from server...");
         const { fetchConversationKeysFromServer } = await import("../api/api");
         const response = await fetchConversationKeysFromServer() as {
           success: boolean;
@@ -409,6 +461,7 @@ export async function loadConversationKeyForDecryption(conversationId: string): 
         };
 
         if (response.success && response.conversationKeys && response.conversationKeys[conversationId]) {
+          console.log("[LOAD_CONV_KEY] Found key on server, decrypting...");
           const keyData = response.conversationKeys[conversationId];
           const decryptedKey = await decryptConversationKeyWithPassword(
             keyData.encryptedKey,
@@ -425,9 +478,11 @@ export async function loadConversationKeyForDecryption(conversationId: string): 
             createdAt: Date.now(),
           };
           storeConversationKey(conversationId, storedKey);
+          console.log("[LOAD_CONV_KEY] ✓ Key restored from server and cached locally");
 
           return decryptedKey;
         } else {
+          console.log("[LOAD_CONV_KEY] No key found on server");
           return null;
         }
       } catch (serverError) {
@@ -437,14 +492,24 @@ export async function loadConversationKeyForDecryption(conversationId: string): 
     }
 
     const keys = JSON.parse(stored);
+    console.log("[LOAD_CONV_KEY] Available conversation IDs:", Object.keys(keys));
 
     const keyData = keys[conversationId];
+    console.log("[LOAD_CONV_KEY] Key data found for this conversation:", !!keyData);
 
     if (!keyData) {
+      console.log("[LOAD_CONV_KEY] ✗ No key data for conversation", conversationId);
       return null;
     }
 
+    console.log("[LOAD_CONV_KEY] Key data structure:", {
+      hasKey: !!keyData.key,
+      keyLength: keyData.key?.length || 0,
+      hasCreatedAt: !!keyData.createdAt,
+    });
+
     const keyDataRaw = Uint8Array.from(atob(keyData.key), c => c.charCodeAt(0));
+    console.log("[LOAD_CONV_KEY] Decoded key size:", keyDataRaw.length);
 
     const importedKey = await crypto.subtle.importKey(
       'raw',
@@ -457,9 +522,12 @@ export async function loadConversationKeyForDecryption(conversationId: string): 
       ['encrypt', 'decrypt']
     );
 
+    console.log("[LOAD_CONV_KEY] ✓ Conversation key imported successfully");
     return importedKey;
   } catch (error) {
     console.error("[LOAD_CONV_KEY] ✗ Failed to load/import conversation key:", error);
+    console.error("[LOAD_CONV_KEY] Error type:", (error as Error).name);
+    console.error("[LOAD_CONV_KEY] Error message:", (error as Error).message);
     return null;
   }
 }
@@ -469,9 +537,17 @@ export async function loadConversationKeyForDecryption(conversationId: string): 
  */
 async function derivePasswordKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   try {
+    console.log("[DERIVE_PWD_KEY] Deriving password key with PBKDF2...");
+    console.log("[DERIVE_PWD_KEY] Input:", {
+      passwordLength: password?.length || 0,
+      saltSize: salt.length,
+      iterations: 100000,
+      hash: "SHA-256",
+    });
 
     const encoder = new TextEncoder();
     const passwordData = encoder.encode(password);
+    console.log("[DERIVE_PWD_KEY] Encoded password size:", passwordData.length);
 
     const baseKey = await crypto.subtle.importKey(
       'raw',
@@ -480,6 +556,7 @@ async function derivePasswordKey(password: string, salt: Uint8Array): Promise<Cr
       false,
       ['deriveKey']
     );
+    console.log("[DERIVE_PWD_KEY] ✓ Base key imported");
 
     const derivedKey = await crypto.subtle.deriveKey(
       {
@@ -496,9 +573,12 @@ async function derivePasswordKey(password: string, salt: Uint8Array): Promise<Cr
       true,
       ['encrypt', 'decrypt']
     );
+    console.log("[DERIVE_PWD_KEY] ✓ Key derived successfully");
     return derivedKey;
   } catch (error) {
     console.error("[DERIVE_PWD_KEY] ✗ Key derivation failed:", error);
+    console.error("[DERIVE_PWD_KEY] Error type:", (error as Error).name);
+    console.error("[DERIVE_PWD_KEY] Error message:", (error as Error).message);
     throw error;
   }
 }
@@ -547,15 +627,31 @@ export async function decryptPrivateKeyWithPassword(
   password: string
 ): Promise<CryptoKey> {
   try {
+    console.log("[DECRYPT_KEY] Starting private key decryption...");
+    console.log("[DECRYPT_KEY] Input validation:", {
+      hasEncryptedKey: !!encryptedKeyBase64,
+      hasSalt: !!saltBase64,
+      hasIv: !!ivBase64,
+      hasPassword: !!password,
+    });
 
     const salt = Uint8Array.from(atob(saltBase64), c => c.charCodeAt(0));
     const iv = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
     const encryptedData = Uint8Array.from(atob(encryptedKeyBase64), c => c.charCodeAt(0));
 
+    console.log("[DECRYPT_KEY] Decoded sizes:", {
+      saltSize: salt.length,
+      ivSize: iv.length,
+      encryptedDataSize: encryptedData.length,
+    });
+
     // Derive encryption key from password
+    console.log("[DECRYPT_KEY] Deriving password key...");
     const passwordKey = await derivePasswordKey(password, salt);
+    console.log("[DECRYPT_KEY] ✓ Password key derived");
 
     // Decrypt private key
+    console.log("[DECRYPT_KEY] Attempting AES-GCM decryption...");
     const decryptedData = await crypto.subtle.decrypt(
       {
         name: 'AES-GCM',
@@ -564,8 +660,10 @@ export async function decryptPrivateKeyWithPassword(
       passwordKey,
       encryptedData
     );
+    console.log("[DECRYPT_KEY] ✓ Decryption successful, decrypted size:", decryptedData.byteLength);
 
     // Import decrypted private key
+    console.log("[DECRYPT_KEY] Importing ECDH private key...");
     const privateKey = await crypto.subtle.importKey(
       'pkcs8',
       decryptedData,
@@ -576,10 +674,13 @@ export async function decryptPrivateKeyWithPassword(
       true,
       ['deriveKey', 'deriveBits']
     );
+    console.log("[DECRYPT_KEY] ✓ Private key imported successfully");
     
     return privateKey;
   } catch (error) {
     console.error("[DECRYPT_KEY] ✗ Decryption failed:", error);
+    console.error("[DECRYPT_KEY] Error type:", (error as Error).name);
+    console.error("[DECRYPT_KEY] Error message:", (error as Error).message);
     throw error;
   }
 }
@@ -592,14 +693,17 @@ export async function encryptConversationKeyWithPassword(
   password: string
 ): Promise<{ encryptedKey: string; salt: string; iv: string }> {
   try {
+    console.log("[ENCRYPT_CONV_KEY] Encrypting conversation key with password...");
 
     // Generate random salt and IV
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const iv = crypto.getRandomValues(new Uint8Array(12));
 
+    console.log("[ENCRYPT_CONV_KEY] Generated salt and IV");
 
     // Derive encryption key from password
     const passwordKey = await derivePasswordKey(password, salt);
+    console.log("[ENCRYPT_CONV_KEY] ✓ Password key derived");
 
     // Encrypt the conversation key
     const encryptedData = await crypto.subtle.encrypt(
@@ -611,6 +715,7 @@ export async function encryptConversationKeyWithPassword(
       conversationKeyRaw
     );
 
+    console.log("[ENCRYPT_CONV_KEY] ✓ Encryption successful");
 
     return {
       encryptedKey: btoa(String.fromCharCode(...new Uint8Array(encryptedData))),
@@ -633,15 +738,24 @@ export async function decryptConversationKeyWithPassword(
   password: string
 ): Promise<CryptoKey> {
   try {
+    console.log("[DECRYPT_CONV_KEY] Decrypting conversation key...");
 
     const salt = Uint8Array.from(atob(saltBase64), c => c.charCodeAt(0));
     const iv = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
     const encryptedData = Uint8Array.from(atob(encryptedKeyBase64), c => c.charCodeAt(0));
 
+    console.log("[DECRYPT_CONV_KEY] Decoded sizes:", {
+      saltSize: salt.length,
+      ivSize: iv.length,
+      encryptedDataSize: encryptedData.length,
+    });
+
     // Derive decryption key from password
+    console.log("[DECRYPT_CONV_KEY] Deriving password key...");
     const passwordKey = await derivePasswordKey(password, salt);
 
     // Decrypt conversation key
+    console.log("[DECRYPT_CONV_KEY] Attempting AES-GCM decryption...");
     const decryptedData = await crypto.subtle.decrypt(
       {
         name: 'AES-GCM',
@@ -651,6 +765,7 @@ export async function decryptConversationKeyWithPassword(
       encryptedData
     );
 
+    console.log("[DECRYPT_CONV_KEY] ✓ Decryption successful");
 
     // Import as AES-GCM key
     const conversationKey = await crypto.subtle.importKey(
@@ -664,9 +779,12 @@ export async function decryptConversationKeyWithPassword(
       ['encrypt', 'decrypt']
     );
 
+    console.log("[DECRYPT_CONV_KEY] ✓ Key imported successfully");
     return conversationKey;
   } catch (error) {
     console.error("[DECRYPT_CONV_KEY] ✗ Decryption failed:", error);
+    console.error("[DECRYPT_CONV_KEY] Error type:", (error as Error).name);
+    console.error("[DECRYPT_CONV_KEY] Error message:", (error as Error).message);
     throw error;
   }
 }
