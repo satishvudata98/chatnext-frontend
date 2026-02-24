@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import type { FC, ChangeEvent, FormEvent } from "react";
 import { ArrowLeft, Send } from "lucide-react";
-import { fetchMessages } from "../api/api";
+import { fetchMessages, getUserPublicKey } from "../api/api";
+import { establishConversationKey, encryptMessage, decryptMessage, loadConversationKeyForDecryption } from "../utils/crypto";
 import MessageBubble from "./MessageBubble";
 
 interface User {
@@ -16,7 +17,8 @@ interface Message {
   conversationId: string;
   fromUserId: string;
   fromUsername: string;
-  message: string;
+  message: string; // This will be the decrypted message
+  encryptedMessage?: any; // Raw encrypted data from server
   isRead: boolean;
   createdAt: number;
   status?: string;
@@ -36,9 +38,16 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [conversationKey, setConversationKey] = useState<CryptoKey | null>(null);
+  const conversationKeyRef = useRef<CryptoKey | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  // Keep conversationKeyRef in sync with state to avoid closure issues in WebSocket handler
+  useEffect(() => {
+    conversationKeyRef.current = conversationKey;
+  }, [conversationKey]);
   
   const scrollToBottom = (): void => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -48,38 +57,87 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
     scrollToBottom();
   }, [messages]);
   
-  // Focus input when conversation loads
+  // Establish conversation encryption key
   useEffect(() => {
-    if (!loading && inputRef.current) {
-      inputRef.current.focus();
+    const establishKey = async (): Promise<void> => {
+      try {
+        // Check if we already have a key for this conversation
+        let key = await loadConversationKeyForDecryption(conversationId);
+        if (key) {
+          setConversationKey(key);
+          return;
+        }
+        
+        // Get the other user's public key
+        const publicKeyResponse = await getUserPublicKey(selectedUser.id);
+        const publicKeyData = publicKeyResponse as { success: boolean; publicKey: string };
+        if (publicKeyData.success && publicKeyData.publicKey) {
+          key = await establishConversationKey(
+            conversationId,
+            publicKeyData.publicKey
+          );
+        } else {
+          console.warn(`[KEY SETUP] ✗ Failed to get public key for user ${selectedUser.id}`);
+        }
+        setConversationKey(key);
+      } catch (error) {
+        console.error("Failed to establish conversation key:", error);
+      }
+    };
+
+    if (selectedUser) {
+      establishKey();
     }
-  }, [conversationId, loading]);
+  }, [conversationId, selectedUser]);
   
   // Listen for incoming messages from WebSocket
   useEffect(() => {
-    const handleWebSocketMessage = (event: Event): void => {
+    const handleWebSocketMessage = async (event: Event): Promise<void> => {
       const customEvent = event as CustomEvent<{
         type: string;
         conversationId: string;
         id: string;
         fromUserId: string;
         fromUsername: string;
-        message: string;
+        encryptedMessage: any;
         createdAt: number;
         status?: string;
       }>;
       const data = customEvent.detail;
-      
+
       if (data.type === "message" && data.conversationId === conversationId) {
+        
+        // Decrypt the message with retry logic for key establishment
+        const decryptWithRetry = async (retries = 0, maxRetries = 10): Promise<string> => {
+          
+          if (conversationKeyRef.current && data.encryptedMessage) {
+            try {
+              const result = await decryptMessage(data.encryptedMessage, conversationKeyRef.current);
+              return result;
+            } catch (error) {
+              console.error("[DECRYPT RETRY] ✗ Failed to decrypt message:", error);
+              return "[Failed to decrypt]";
+            }
+          } else if (retries < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            return decryptWithRetry(retries + 1, maxRetries);
+          } else {
+            // Max retries reached, show encrypted placeholder
+            console.warn(`[DECRYPT RETRY] ✗ Max retries reached, key still not available`);
+            return "[Encrypted message]";
+          }
+        };
+
+        const decryptedMessage = await decryptWithRetry();
+
         setMessages((prev: Message[]): Message[] => {
           // Check if this is a confirmation of our own message (replace temp ID)
           const tempMessageIndex = prev.findIndex(
             (m) =>
               m.id.startsWith("temp-") &&
-              m.message === data.message &&
               m.fromUserId === user.id
           );
-          
+
           if (tempMessageIndex !== -1) {
             // Replace temp message with confirmed message from server
             const updatedMessages = [...prev];
@@ -88,7 +146,8 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
               conversationId: data.conversationId,
               fromUserId: data.fromUserId,
               fromUsername: data.fromUsername,
-              message: data.message,
+              message: decryptedMessage,
+              encryptedMessage: data.encryptedMessage,
               isRead: false,
               createdAt: data.createdAt,
               status: data.status || "sent"
@@ -101,7 +160,8 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
               conversationId: data.conversationId,
               fromUserId: data.fromUserId,
               fromUsername: data.fromUsername,
-              message: data.message,
+              message: decryptedMessage,
+              encryptedMessage: data.encryptedMessage,
               isRead: false,
               createdAt: data.createdAt,
               status: data.status || "sent"
@@ -169,23 +229,48 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
   
   // Load message history when conversation is selected
   useEffect(() => {
-    (async (): Promise<void> => {
+    const loadMessages = async (): Promise<void> => {
+      
+      if (!conversationKey) {
+        return;
+      }
+
       setLoading(true);
       try {
         const data = await fetchMessages(conversationId);
         const typedData = data as { success: boolean; messages: any[] };
         if (typedData.success && typedData.messages) {
-          // Transform backend message format to our format
-          const transformedMessages = typedData.messages.map((msg: any) => ({
-            id: msg.id,
-            conversationId: msg.conversation_id,
-            fromUserId: msg.from_user_id,
-            fromUsername: msg.users?.username || "Unknown",
-            message: msg.message,
-            isRead: false,
-            createdAt: msg.created_at,
-            status: msg.status || "sent"
-          }));
+          // Transform backend message format to our format and decrypt
+          const transformedMessages = await Promise.all(
+            typedData.messages.map(async (msg: any) => {
+              let decryptedMessage = "[Encrypted message]";
+              if (msg.encrypted_message) {
+                try {
+                  const encryptedData = typeof msg.encrypted_message === 'string'
+                    ? JSON.parse(msg.encrypted_message)
+                    : msg.encrypted_message;
+                  decryptedMessage = await decryptMessage(encryptedData, conversationKey);
+                } catch (error) {
+                  console.error(`[LOAD MESSAGES] ✗ Failed to decrypt message ${msg.id}:`, error);
+                  decryptedMessage = "[Failed to decrypt]";
+                }
+              } else {
+                console.warn(`[LOAD MESSAGES] ⚠ Message ${msg.id} has no encrypted_message field`);
+              }
+
+              return {
+                id: msg.id,
+                conversationId: msg.conversation_id,
+                fromUserId: msg.from_user_id,
+                fromUsername: msg.users?.username || "Unknown",
+                message: decryptedMessage,
+                encryptedMessage: msg.encrypted_message,
+                isRead: false,
+                createdAt: msg.created_at,
+                status: msg.status || "sent"
+              };
+            })
+          );
           setMessages(transformedMessages);
 
           // Send message_seen event for all messages in this conversation
@@ -198,24 +283,35 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
           }
         }
       } catch (err) {
-        console.error("Error fetching messages:", err);
+        console.error("[LOAD MESSAGES] ✗ Error fetching messages:", err);
       } finally {
         setLoading(false);
       }
-    })();
-  }, [conversationId, ws]);
+    };
+
+    loadMessages();
+  }, [conversationId, ws, conversationKey]);
   
-  const send = (e?: FormEvent<HTMLFormElement>): void => {
+  const send = async (e?: FormEvent<HTMLFormElement>): Promise<void> => {
     if (e) {
       e.preventDefault();
     }
-    
-    if (!input.trim() || !selectedUser) return;
-    
+
+    if (!input.trim() || !selectedUser || !conversationKey) return;
+
     const messageToSend: string = input.trim();
     const now = Math.floor(Date.now() / 1000);
     const tempId = `temp-${Date.now()}`;
-    
+
+    // Encrypt the message
+    let encryptedMessage;
+    try {
+      encryptedMessage = await encryptMessage(messageToSend, conversationKey, conversationId);
+    } catch (error) {
+      console.error("Failed to encrypt message:", error);
+      return;
+    }
+
     // Optimistic update - add message to UI immediately
     const optimisticMessage: Message = {
       id: tempId,
@@ -226,17 +322,17 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
       isRead: false,
       createdAt: now
     };
-    
+
     setMessages((prev: Message[]): Message[] => [...prev, optimisticMessage]);
     setInput("");
-    
+
     try {
       ws.send(
         JSON.stringify({
           type: "message",
           conversationId,
           toUserId: selectedUser.id,
-          message: messageToSend
+          encryptedMessage
         })
       );
     } catch (error) {

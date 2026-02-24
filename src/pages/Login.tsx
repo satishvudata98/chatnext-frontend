@@ -23,11 +23,12 @@ const Login: FC = (): JSX.Element => {
     setLoading(true);
     try {
       const data = await loginApi(username, password);
-      const loginData = data as { success: boolean; token: string; user: { id: string; username: string; email: string } };
+      const loginData = data as { success: boolean; accessToken: string; refreshToken: string; user: { id: string; username: string; email: string } };
 
-      if (loginData.success && loginData.token) {
-        // Store authentication token and user info
-        localStorage.setItem("token", loginData.token);
+      if (loginData.success && loginData.accessToken) {
+        // Store authentication tokens and user info
+        localStorage.setItem("accessToken", loginData.accessToken);
+        localStorage.setItem("refreshToken", loginData.refreshToken);
         localStorage.setItem("user", JSON.stringify(loginData.user));
         navigate("/chat");
       } else {

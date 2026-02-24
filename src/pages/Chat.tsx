@@ -4,7 +4,8 @@ import { useNavigate } from "react-router";
 import UserList from "../components/UserList";
 import ChatWindow from "../components/ChatWindow";
 import { config } from "../config/config";
-import { fetchUsers, getOrCreateConversation } from "../api/api";
+import { fetchUsers, getOrCreateConversation, updatePublicKey } from "../api/api";
+import { initializeE2EE, getUserPublicKey } from "../utils/crypto";
 import "../styles/chat.css";
 
 interface User {
@@ -13,13 +14,14 @@ interface User {
   email: string;
   online: boolean;
   last_seen?: number;
+  public_key?: string;
 }
 
 const Chat: FC = (): JSX.Element | null => {
   const navigate = useNavigate();
   
   // Initialize from localStorage only once using useMemo
-  const token = useMemo(() => localStorage.getItem("token"), []);
+  const token = useMemo(() => localStorage.getItem("accessToken"), []);
   const user = useMemo(() => {
     const userStr = localStorage.getItem("user");
     return userStr ? JSON.parse(userStr) : null;
@@ -47,6 +49,20 @@ const Chat: FC = (): JSX.Element | null => {
       navigate("/login");
       return;
     }
+
+    // Initialize E2EE
+    (async (): Promise<void> => {
+      try {
+        await initializeE2EE();
+        const publicKey = await getUserPublicKey();
+        if (publicKey) {
+          await updatePublicKey(publicKey);
+        }
+      } catch (error) {
+        console.error("Failed to initialize E2EE:", error);
+        setError("Failed to initialize encryption");
+      }
+    })();
   }, [navigate, token, user]);
   
   // Fetch users list
@@ -290,7 +306,8 @@ const Chat: FC = (): JSX.Element | null => {
   };
   
   const handleLogout = (): void => {
-    localStorage.removeItem("token");
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
     intentionalCloseRef.current = true;
     if (wsRef.current) {

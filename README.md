@@ -2,13 +2,40 @@
 
 A modern real-time chat application built with React and TypeScript. This frontend connects to a backend API to provide instant messaging capabilities with user authentication and conversation management.
 
-## Features
+## Authentication
 
-- **User Authentication**: Register new accounts and log in securely
-- **Real-time Messaging**: Send and receive messages instantly
-- **User List**: View all available users with online/offline status
-- **Conversation Management**: Start conversations with any user
-- **Responsive UI**: Clean and intuitive user interface
+The app uses a secure token-based authentication system with access and refresh tokens:
+
+- **Access Token**: Short-lived (15 minutes), stored in localStorage
+- **Refresh Token**: Long-lived (7 days), stored securely in database
+- **Automatic Refresh**: Tokens are refreshed automatically when expired
+- **Secure Logout**: All tokens cleared on logout
+
+## End-to-End Encryption
+
+ChatNext features **military-grade end-to-end encryption (E2EE)** to protect your messages:
+
+- **Zero-Knowledge Architecture**: Server cannot read your messages
+- **Perfect Forward Secrecy**: Each conversation uses unique encryption keys
+- **AES-256-GCM Encryption**: Industry-standard authenticated encryption
+- **ECDH Key Exchange**: Secure key establishment between users
+- **Client-Side Crypto**: All encryption happens in your browser
+
+### How E2EE Works
+
+1. **Key Generation**: Each user gets a unique cryptographic key pair
+2. **Key Exchange**: Public keys are shared to establish secure connections
+3. **Message Encryption**: Messages are encrypted before leaving your device
+4. **Secure Transmission**: Only encrypted data travels through the network
+5. **Local Decryption**: Messages are decrypted only on recipient devices
+
+Your privacy is protected even if the server is compromised.
+
+## Navigation
+
+- If user has valid tokens, app automatically navigates to `/chat`
+- Invalid/expired tokens redirect to home page
+- Protected routes require authentication
 
 ## Tech Stack
 

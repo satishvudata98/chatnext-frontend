@@ -40,11 +40,12 @@ const Register: FC = (): JSX.Element => {
     setLoading(true);
     try {
       const data = await registerApi(username, email, password);
-      const loginData = data as { success: boolean; token: string; user: { id: string; username: string; email: string } };
+      const loginData = data as { success: boolean; accessToken: string; refreshToken: string; user: { id: string; username: string; email: string } };
 
-      if (loginData.success && loginData.token) {
-        // Store token and user info, then redirect to chat
-        localStorage.setItem("token", loginData.token);
+      if (loginData.success && loginData.accessToken) {
+        // Store tokens and user info, then redirect to chat
+        localStorage.setItem("accessToken", loginData.accessToken);
+        localStorage.setItem("refreshToken", loginData.refreshToken);
         localStorage.setItem("user", JSON.stringify(loginData.user));
         navigate("/chat");
       } else {
