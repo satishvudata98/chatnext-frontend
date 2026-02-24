@@ -30,7 +30,10 @@ const Login: FC = (): JSX.Element => {
         localStorage.setItem("accessToken", loginData.accessToken);
         localStorage.setItem("refreshToken", loginData.refreshToken);
         localStorage.setItem("user", JSON.stringify(loginData.user));
-        navigate("/chat");
+        // Dispatch event to tell App.tsx to skip verification and set authenticated immediately
+        globalThis.dispatchEvent(new Event("loginSuccess"));
+        // Small delay to ensure event listeners are triggered before navigation
+        setTimeout(() => navigate("/chat"), 50);
       } else {
         setError((data as { message?: string }).message || "Invalid login credentials");
       }

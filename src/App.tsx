@@ -8,11 +8,19 @@ import { verifyApi } from "./api/api";
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [skipVerify, setSkipVerify] = useState<boolean>(false);
 
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem("accessToken");
       if (token) {
+        // If we just logged in, skip verification (tokens are fresh)
+        if (skipVerify) {
+          setIsAuthenticated(true);
+          setSkipVerify(false);
+          return;
+        }
+
         try {
           await verifyApi();
           setIsAuthenticated(true);
@@ -29,7 +37,25 @@ export default function App() {
     };
 
     checkAuth();
-  }, []);
+
+    // Listen for storage changes (tab/window sync + login updates)
+    const handleStorageChange = () => {
+      checkAuth();
+    };
+
+    // Listen for custom login success event - skip verification on fresh login
+    const handleLoginSuccess = () => {
+      setSkipVerify(true);
+      checkAuth();
+    };
+
+    globalThis.addEventListener("storage", handleStorageChange);
+    globalThis.addEventListener("loginSuccess", handleLoginSuccess);
+    return () => {
+      globalThis.removeEventListener("storage", handleStorageChange);
+      globalThis.removeEventListener("loginSuccess", handleLoginSuccess);
+    };
+  }, [skipVerify]);
 
   // Show loading while checking auth
   if (isAuthenticated === null) {
