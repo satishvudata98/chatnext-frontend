@@ -71,36 +71,15 @@ export async function restoreKeyPairFromServer(
   password: string
 ): Promise<KeyPair> {
   try {
-    console.log("[RESTORE_SERVER] Starting restore from server...");
-    console.log("[RESTORE_SERVER] Input validation:", {
-      hasEncryptedKey: !!encryptedKeyBase64,
-      hasSalt: !!saltBase64,
-      hasIv: !!ivBase64,
-      hasPublicKey: !!publicKeyBase64,
-      hasPassword: !!password,
-      passwordLength: password?.length || 0,
-    });
-
-    // Decrypt the private key
-    console.log("[RESTORE_SERVER] Decrypting private key from server...");
     const privateKey = await decryptPrivateKeyWithPassword(
       encryptedKeyBase64,
       saltBase64,
       ivBase64,
       password
     );
-    console.log("[RESTORE_SERVER] ✓ Private key decrypted");
-
-    // Create full KeyPair with both keys
-    console.log("[RESTORE_SERVER] Restoring full keypair...");
     const keyPair = await restoreKeyPairFromDecrypted(privateKey, publicKeyBase64);
-    console.log("[RESTORE_SERVER] ✓ Keypair restoration complete");
-    
     return keyPair;
   } catch (error) {
-    console.error("[RESTORE_SERVER] ✗ Restoration failed:", error);
-    console.error("[RESTORE_SERVER] Error type:", (error as Error).name);
-    console.error("[RESTORE_SERVER] Error message:", (error as Error).message);
     throw error;
   }
 }
@@ -118,15 +97,7 @@ export async function exportPublicKey(publicKey: CryptoKey): Promise<string> {
  */
 export async function importPublicKey(publicKeyBase64: string): Promise<CryptoKey> {
   try {
-    console.log("[IMPORT_PUBLIC_KEY] Importing public key from base64...");
-    console.log("[IMPORT_PUBLIC_KEY] Input:", {
-      hasKeyData: !!publicKeyBase64,
-      dataLength: publicKeyBase64?.length || 0,
-    });
-
     const publicKeyData = Uint8Array.from(atob(publicKeyBase64), c => c.charCodeAt(0));
-    console.log("[IMPORT_PUBLIC_KEY] Decoded size:", publicKeyData.length);
-
     const publicKey = await crypto.subtle.importKey(
       'spki',
       publicKeyData,
@@ -137,12 +108,8 @@ export async function importPublicKey(publicKeyBase64: string): Promise<CryptoKe
       true,
       []
     );
-    console.log("[IMPORT_PUBLIC_KEY] ✓ Public key imported successfully");
     return publicKey;
   } catch (error) {
-    console.error("[IMPORT_PUBLIC_KEY] ✗ Import failed:", error);
-    console.error("[IMPORT_PUBLIC_KEY] Error type:", (error as Error).name);
-    console.error("[IMPORT_PUBLIC_KEY] Error message:", (error as Error).message);
     throw error;
   }
 }
@@ -223,25 +190,8 @@ export async function decryptMessage(
   key: CryptoKey
 ): Promise<string> {
   try {
-    console.log("[DECRYPT_MSG] Starting message decryption...");
-    console.log("[DECRYPT_MSG] Input validation:", {
-      hasCiphertext: !!encryptedMessage.ciphertext,
-      ciphertextLength: encryptedMessage.ciphertext?.length || 0,
-      hasIv: !!encryptedMessage.iv,
-      ivLength: encryptedMessage.iv?.length || 0,
-      hasKey: !!key,
-      keyId: encryptedMessage.keyId,
-    });
-
     const ciphertext = Uint8Array.from(atob(encryptedMessage.ciphertext), c => c.charCodeAt(0));
     const iv = Uint8Array.from(atob(encryptedMessage.iv), c => c.charCodeAt(0));
-
-    console.log("[DECRYPT_MSG] Decoded sizes:", {
-      ciphertextSize: ciphertext.length,
-      ivSize: iv.length,
-    });
-
-    console.log("[DECRYPT_MSG] Attempting AES-GCM decryption...");
     const decrypted = await crypto.subtle.decrypt(
       {
         name: 'AES-GCM',
@@ -250,17 +200,10 @@ export async function decryptMessage(
       key,
       ciphertext
     );
-
-    console.log("[DECRYPT_MSG] ✓ Decryption successful, decrypted size:", decrypted.byteLength);
-
     const decoder = new TextDecoder();
     const result = decoder.decode(decrypted);
-    console.log("[DECRYPT_MSG] ✓ Message decoded, length:", result.length);
     return result;
   } catch (error) {
-    console.error("[DECRYPT_MSG] ✗ Decryption failed:", error);
-    console.error("[DECRYPT_MSG] Error type:", (error as Error).name);
-    console.error("[DECRYPT_MSG] Error message:", (error as Error).message);
     throw error;
   }
 }

@@ -131,17 +131,36 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
         const decryptedMessage = await decryptWithRetry();
 
         setMessages((prev: Message[]): Message[] => {
-          // Check if this is a confirmation of our own message (replace temp ID)
-          const tempMessageIndex = prev.findIndex(
-            (m) =>
+          // Check if this is a confirmation of our own optimistic message (replace temp ID)
+          let replaced = false;
+          const updatedMessages = prev.map((m) => {
+            // Only replace temp message if the incoming message is from the same user (confirmation of own message)
+            if (
               m.id.startsWith("temp-") &&
-              m.fromUserId === user.id
-          );
+              m.fromUserId === data.fromUserId &&
+              m.fromUserId === user.id &&
+              !replaced &&
+              Math.abs(m.createdAt - data.createdAt) < 10
+            ) {
+              replaced = true;
+              return {
+                id: data.id,
+                conversationId: data.conversationId,
+                fromUserId: data.fromUserId,
+                fromUsername: data.fromUsername,
+                message: decryptedMessage,
+                encryptedMessage: data.encryptedMessage,
+                isRead: false,
+                createdAt: data.createdAt,
+                status: data.status || "sent"
+              };
+            }
+            return m;
+          });
 
-          if (tempMessageIndex !== -1) {
-            // Replace temp message with confirmed message from server
-            const updatedMessages = [...prev];
-            updatedMessages[tempMessageIndex] = {
+          const alreadyExists = updatedMessages.some((m) => m.id === data.id);
+          if (!replaced && !alreadyExists) {
+            updatedMessages.push({
               id: data.id,
               conversationId: data.conversationId,
               fromUserId: data.fromUserId,
@@ -151,28 +170,10 @@ const ChatWindow: FC<Props> = (props: Props): JSX.Element => {
               isRead: false,
               createdAt: data.createdAt,
               status: data.status || "sent"
-            };
-            // Sort messages by timestamp after replacement
-            updatedMessages.sort((a, b) => a.createdAt - b.createdAt);
-            return updatedMessages;
-          } else {
-            // New message from other user
-            const newMessage: Message = {
-              id: data.id,
-              conversationId: data.conversationId,
-              fromUserId: data.fromUserId,
-              fromUsername: data.fromUsername,
-              message: decryptedMessage,
-              encryptedMessage: data.encryptedMessage,
-              isRead: false,
-              createdAt: data.createdAt,
-              status: data.status || "sent"
-            };
-            const updatedMessages = [...prev, newMessage];
-            // Sort messages by timestamp after adding new message
-            updatedMessages.sort((a, b) => a.createdAt - b.createdAt);
-            return updatedMessages;
+            });
           }
+          updatedMessages.sort((a, b) => a.createdAt - b.createdAt);
+          return updatedMessages;
         });
       }
     };
