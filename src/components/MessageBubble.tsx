@@ -3,6 +3,9 @@ import type { FC } from "react";
 interface Props {
   isOwn: boolean;
   message: string;
+  contentType?: "text" | "image";
+  imageUrl?: string;
+  imageFileName?: string;
   timestamp?: number;
   username?: string;
   formatTime?: (timestamp: number) => string;
@@ -18,13 +21,13 @@ function defaultFormatTime(timestamp: number): string {
     return date.toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
-      hour12: false
+      hour12: false,
     });
   }
 
   return date.toLocaleDateString("en-US", {
     month: "short",
-    day: "numeric"
+    day: "numeric",
   });
 }
 
@@ -32,21 +35,24 @@ const MessageBubble: FC<Props> = (props: Props): JSX.Element => {
   const {
     isOwn,
     message,
+    contentType = "text",
+    imageUrl,
+    imageFileName,
     timestamp = Math.floor(Date.now() / 1000),
     username,
     formatTime = defaultFormatTime,
-    status = "sent"
+    status = "sent",
   } = props;
 
   const getStatusIcon = (): string => {
-    if (!isOwn) return ""; // Only show status for own messages
+    if (!isOwn) return "";
     switch (status) {
       case "seen":
-        return "✓✓"; // Double check mark for seen
+        return "✓✓";
       case "delivered":
-        return "✓✓"; // Double check mark for delivered
+        return "✓✓";
       case "sent":
-        return "✓"; // Single check mark for sent
+        return "✓";
       default:
         return "✓";
     }
@@ -61,7 +67,21 @@ const MessageBubble: FC<Props> = (props: Props): JSX.Element => {
     <div className={`message-wrapper ${isOwn ? "sent-wrapper" : "received-wrapper"}`}>
       <div className={isOwn ? "sent" : "received"}>
         {!isOwn && username && <div className="message-username">{username}</div>}
-        <div className="bubble">{message}</div>
+        <div className={`bubble ${contentType === "image" ? "bubble-image" : ""}`}>
+          {contentType === "image" && imageUrl ? (
+            <>
+              <img
+                src={imageUrl}
+                alt={imageFileName || "Shared image"}
+                className="message-image"
+                loading="lazy"
+              />
+              {imageFileName && <div className="message-file-name">{imageFileName}</div>}
+            </>
+          ) : (
+            <div className="bubble-text">{message}</div>
+          )}
+        </div>
         <span className={`timestamp ${getStatusClass()}`}>
           {formatTime(timestamp)}
           {isOwn && <span className={`status-tick ${getStatusClass()}`}>{getStatusIcon()}</span>}

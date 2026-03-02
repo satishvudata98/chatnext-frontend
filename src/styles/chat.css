@@ -497,6 +497,30 @@
   gap: 4px;
 }
 
+.bubble-image {
+  padding: 6px;
+  max-width: 320px;
+}
+
+.message-image {
+  width: 100%;
+  max-width: 308px;
+  max-height: 340px;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+}
+
+.message-file-name {
+  font-size: 12px;
+  color: var(--wa-text-secondary);
+  margin-top: 6px;
+  max-width: 290px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .sent .bubble {
   background: var(--wa-message-out);
   border-bottom-right-radius: 0;
@@ -684,6 +708,34 @@
   gap: 10px;
 }
 
+.attach-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--wa-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.attach-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.attach-btn:disabled {
+  color: #9aa8b0;
+  cursor: not-allowed;
+}
+
+.hidden-file-input {
+  display: none;
+}
+
 .message-input {
   flex: 1;
   padding: 10px 16px;
@@ -731,6 +783,15 @@
   background: var(--wa-gray-light);
   cursor: not-allowed;
   color: var(--wa-text-secondary);
+}
+
+.composer-error {
+  background: #fff2f2;
+  color: #c62828;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 6px 12px;
+  border-top: 1px solid #f6d0d0;
 }
 
 /* Responsive Design */
@@ -839,6 +900,11 @@
   
   .input-area {
     padding: 8px 12px;
+  }
+
+  .attach-btn {
+    width: 40px;
+    height: 40px;
   }
   
   .message-input {

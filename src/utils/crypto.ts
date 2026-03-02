@@ -731,3 +731,105 @@ export async function decryptConversationKeyWithPassword(
     throw error;
   }
 }
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+}
+
+/**
+ * Encrypt binary payload (image bytes) with a random AES-GCM key.
+ * Returns encrypted bytes + the exported key and IV in base64 for transport.
+ */
+export async function encryptAttachmentBinary(
+  inputBytes: ArrayBuffer
+): Promise<{
+  encryptedBytes: ArrayBuffer;
+  keyBase64: string;
+  ivBase64: string;
+}> {
+  const mediaKey = await crypto.subtle.generateKey(
+    {
+      name: "AES-GCM",
+      length: 256,
+    },
+    true,
+    ["encrypt", "decrypt"]
+  );
+
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encryptedBytes = await crypto.subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv,
+    },
+    mediaKey,
+    inputBytes
+  );
+
+  const rawKey = await crypto.subtle.exportKey("raw", mediaKey);
+  return {
+    encryptedBytes,
+    keyBase64: bytesToBase64(new Uint8Array(rawKey)),
+    ivBase64: bytesToBase64(iv),
+  };
+}
+
+/**
+ * Decrypt binary attachment bytes (from encrypted storage object) back to Blob.
+ */
+export async function decryptAttachmentBinary(
+  encryptedBytes: ArrayBuffer,
+  keyBase64: string,
+  ivBase64: string,
+  mimeType: string
+): Promise<Blob> {
+  const rawKey = base64ToBytes(keyBase64);
+  const iv = base64ToBytes(ivBase64);
+  const rawKeyBuffer = toArrayBuffer(rawKey);
+  const ivBuffer = toArrayBuffer(iv);
+
+  const mediaKey = await crypto.subtle.importKey(
+    "raw",
+    rawKeyBuffer,
+    {
+      name: "AES-GCM",
+      length: 256,
+    },
+    false,
+    ["decrypt"]
+  );
+
+  const decryptedBytes = await crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: ivBuffer,
+    },
+    mediaKey,
+    encryptedBytes
+  );
+
+  return new Blob([decryptedBytes], { type: mimeType });
+}

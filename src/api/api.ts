@@ -115,3 +115,33 @@ export async function storeConversationKeyOnServer(
 export async function fetchConversationKeysFromServer() {
   return apiRequest("/api/user/conversation-keys", "GET");
 }
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+export async function uploadEncryptedImageMedia(payload: {
+  conversationId: string;
+  fileName: string;
+  mimeType: string;
+  encryptedBytes: ArrayBuffer;
+}) {
+  const encryptedData = bytesToBase64(new Uint8Array(payload.encryptedBytes));
+  return apiRequest("/api/media/upload", "POST", {
+    conversationId: payload.conversationId,
+    fileName: payload.fileName,
+    mimeType: payload.mimeType,
+    encryptedData,
+    byteSize: payload.encryptedBytes.byteLength,
+  });
+}
+
+export async function fetchMediaDownloadUrl(mediaId: string) {
+  return apiRequest(`/api/media/download-url?mediaId=${encodeURIComponent(mediaId)}`, "GET");
+}
