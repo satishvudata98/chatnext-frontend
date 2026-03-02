@@ -1,11 +1,19 @@
 import { useState } from "react";
 import type { FC, ChangeEvent, FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
+<<<<<<< Updated upstream
 import { registerApi } from "../api/api";
+=======
+import { storeEncryptedPrivateKey } from "../api/api";
+import { encryptPrivateKeyWithPassword, generateUserKeyPair, storeUserKeyPair } from "../utils/crypto";
+import { useAuth } from "../context/AuthContext";
+>>>>>>> Stashed changes
 import "../styles/auth.css";
 
 const Register: FC = (): JSX.Element => {
   const navigate = useNavigate();
+  const { signupWithEmail } = useAuth();
+
   const [username, setUsername] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
@@ -32,16 +40,12 @@ const Register: FC = (): JSX.Element => {
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError("Invalid email format");
-      return;
-    }
-
     setLoading(true);
     try {
-      const data = await registerApi(username, email, password);
-      const loginData = data as { success: boolean; accessToken: string; refreshToken: string; user: { id: string; username: string; email: string } };
+      await signupWithEmail(email.trim(), password, username.trim());
+      sessionStorage.setItem("tempPassword", password);
 
+<<<<<<< Updated upstream
       if (loginData.success && loginData.accessToken) {
         // Store tokens and user info, then redirect to chat
         localStorage.setItem("accessToken", loginData.accessToken);
@@ -50,17 +54,23 @@ const Register: FC = (): JSX.Element => {
         navigate("/chat");
       } else {
         setError((data as { message?: string }).message || "User already exists");
+=======
+      // Keep the existing E2EE bootstrap flow unchanged.
+      try {
+        const keyPair = await generateUserKeyPair();
+        await storeUserKeyPair(keyPair);
+        const encryptedKeyData = await encryptPrivateKeyWithPassword(keyPair.privateKey, password);
+        await storeEncryptedPrivateKey(encryptedKeyData);
+      } catch (e2eeError) {
+        console.error("Warning: failed to initialize encrypted private key storage:", e2eeError);
+>>>>>>> Stashed changes
       }
+
+      navigate("/chat");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Connection error. Please try again.");
+      setError(err instanceof Error ? err.message : "Unable to create account");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === "Enter") {
-      handleRegister(e as unknown as FormEvent<HTMLFormElement>);
     }
   };
 
@@ -69,17 +79,16 @@ const Register: FC = (): JSX.Element => {
       <div className="auth-card">
         <div className="auth-header">
           <h2>Create Account</h2>
-          <p>Join ChatNext and start messaging</p>
+          <p>Sign up with Firebase Email Authentication</p>
         </div>
 
         <form onSubmit={handleRegister} className="auth-form">
           <div className="form-group">
             <input
               type="text"
-              placeholder="Username"
+              placeholder="Display name"
               value={username}
               onChange={(e: ChangeEvent<HTMLInputElement>): void => setUsername(e.target.value)}
-              onKeyPress={handleKeyPress}
               disabled={loading}
             />
           </div>
@@ -90,7 +99,6 @@ const Register: FC = (): JSX.Element => {
               placeholder="Email"
               value={email}
               onChange={(e: ChangeEvent<HTMLInputElement>): void => setEmail(e.target.value)}
-              onKeyPress={handleKeyPress}
               disabled={loading}
             />
           </div>
@@ -101,7 +109,6 @@ const Register: FC = (): JSX.Element => {
               placeholder="Password"
               value={password}
               onChange={(e: ChangeEvent<HTMLInputElement>): void => setPassword(e.target.value)}
-              onKeyPress={handleKeyPress}
               disabled={loading}
             />
           </div>
@@ -112,19 +119,14 @@ const Register: FC = (): JSX.Element => {
               placeholder="Confirm Password"
               value={confirmPassword}
               onChange={(e: ChangeEvent<HTMLInputElement>): void => setConfirmPassword(e.target.value)}
-              onKeyPress={handleKeyPress}
               disabled={loading}
             />
           </div>
 
           {error && <div className="error-message">{error}</div>}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="auth-button"
-          >
-            {loading ? "Creating account..." : "Create Account"}
+          <button type="submit" disabled={loading} className="auth-button">
+            {loading ? "Creating account..." : "Sign Up with Email"}
           </button>
         </form>
 
@@ -139,6 +141,6 @@ const Register: FC = (): JSX.Element => {
       </div>
     </div>
   );
-}
+};
 
 export default Register;

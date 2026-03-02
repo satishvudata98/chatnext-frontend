@@ -86,15 +86,24 @@
   border-radius: 8px;
   font-weight: 600;
   font-size: 14px;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  background: linear-gradient(135deg, #25d366 0%, #20b85c 100%);
+  color: white;
   transition: all 0.3s ease;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
+.auth-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .auth-button.primary {
   background: linear-gradient(135deg, #25d366 0%, #20b85c 100%);
   color: white;
-  width: 100%;
 }
 
 .auth-button.primary:hover:not(:disabled) {
@@ -109,12 +118,15 @@
 .auth-button.secondary {
   background: transparent;
   color: var(--color-primary);
-  width: 100%;
   border: 2px solid var(--color-primary);
 }
 
 .auth-button.secondary:hover:not(:disabled) {
   background: rgba(37, 211, 102, 0.05);
+}
+
+.google-button {
+  margin-bottom: 20px;
 }
 
 .auth-footer {

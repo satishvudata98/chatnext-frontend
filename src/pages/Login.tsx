@@ -1,27 +1,31 @@
 import { useState } from "react";
 import type { FC, ChangeEvent, FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { loginApi } from "../api/api";
+import { useAuth } from "../context/AuthContext";
 import "../styles/auth.css";
 
 const Login: FC = (): JSX.Element => {
   const navigate = useNavigate();
-  const [username, setUsername] = useState<string>("");
+  const { loginWithEmail, loginWithGoogle } = useAuth();
+
+  const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loadingEmail, setLoadingEmail] = useState<boolean>(false);
+  const [loadingGoogle, setLoadingGoogle] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
 
-  const handleLogin = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
+  const handleEmailLogin = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setError("");
 
-    if (!username.trim() || !password.trim()) {
-      setError("Username and password are required");
+    if (!email.trim() || !password.trim()) {
+      setError("Email and password are required");
       return;
     }
 
-    setLoading(true);
+    setLoadingEmail(true);
     try {
+<<<<<<< Updated upstream
       const data = await loginApi(username, password);
       const loginData = data as { success: boolean; accessToken: string; refreshToken: string; user: { id: string; username: string; email: string } };
 
@@ -34,16 +38,29 @@ const Login: FC = (): JSX.Element => {
       } else {
         setError((data as { message?: string }).message || "Invalid login credentials");
       }
+=======
+      await loginWithEmail(email.trim(), password);
+      sessionStorage.setItem("tempPassword", password);
+      navigate("/chat");
+>>>>>>> Stashed changes
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Connection error. Please try again.");
+      setError(err instanceof Error ? err.message : "Unable to sign in");
     } finally {
-      setLoading(false);
+      setLoadingEmail(false);
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === "Enter") {
-      handleLogin(e as unknown as FormEvent<HTMLFormElement>);
+  const handleGoogleLogin = async (): Promise<void> => {
+    setError("");
+    setLoadingGoogle(true);
+    try {
+      sessionStorage.removeItem("tempPassword");
+      await loginWithGoogle();
+      navigate("/chat");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed");
+    } finally {
+      setLoadingGoogle(false);
     }
   };
 
@@ -52,18 +69,17 @@ const Login: FC = (): JSX.Element => {
       <div className="auth-card">
         <div className="auth-header">
           <h2>Welcome Back</h2>
-          <p>Sign in to continue chatting</p>
+          <p>Sign in with Firebase to continue chatting</p>
         </div>
 
-        <form onSubmit={handleLogin} className="auth-form">
+        <form onSubmit={handleEmailLogin} className="auth-form">
           <div className="form-group">
             <input
-              type="text"
-              placeholder="Username"
-              value={username}
-              onChange={(e: ChangeEvent<HTMLInputElement>): void => setUsername(e.target.value)}
-              onKeyPress={handleKeyPress}
-              disabled={loading}
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e: ChangeEvent<HTMLInputElement>): void => setEmail(e.target.value)}
+              disabled={loadingEmail || loadingGoogle}
             />
           </div>
 
@@ -73,25 +89,29 @@ const Login: FC = (): JSX.Element => {
               placeholder="Password"
               value={password}
               onChange={(e: ChangeEvent<HTMLInputElement>): void => setPassword(e.target.value)}
-              onKeyPress={handleKeyPress}
-              disabled={loading}
+              disabled={loadingEmail || loadingGoogle}
             />
           </div>
 
           {error && <div className="error-message">{error}</div>}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="auth-button"
-          >
-            {loading ? "Signing in..." : "Sign In"}
+          <button type="submit" disabled={loadingEmail || loadingGoogle} className="auth-button">
+            {loadingEmail ? "Signing in..." : "Sign In with Email"}
           </button>
         </form>
 
+        <button
+          type="button"
+          disabled={loadingEmail || loadingGoogle}
+          onClick={handleGoogleLogin}
+          className="auth-button secondary google-button"
+        >
+          {loadingGoogle ? "Connecting..." : "Continue with Google"}
+        </button>
+
         <div className="auth-footer">
           <p>
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link to="/register" className="auth-link">
               Create one
             </Link>

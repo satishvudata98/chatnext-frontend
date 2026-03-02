@@ -1,31 +1,31 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FC } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 import UserList from "../components/UserList";
 import ChatWindow from "../components/ChatWindow";
 import { config } from "../config/config";
+<<<<<<< Updated upstream
 import { fetchUsers, getOrCreateConversation, updatePublicKey } from "../api/api";
 import { initializeE2EE, getUserPublicKey } from "../utils/crypto";
+=======
+import { fetchUsers, getOrCreateConversation, updatePublicKey, fetchEncryptedPrivateKey } from "../api/api";
+import { initializeE2EE, getUserPublicKey, restoreKeyPairFromServer, storeUserKeyPair } from "../utils/crypto";
+import { useAuth } from "../context/AuthContext";
+>>>>>>> Stashed changes
 import "../styles/chat.css";
 
 interface User {
   id: string;
   username: string;
   email: string;
-  online: boolean;
+  online?: boolean;
   last_seen?: number;
   public_key?: string;
 }
 
 const Chat: FC = (): JSX.Element | null => {
   const navigate = useNavigate();
-  
-  // Initialize from localStorage only once using useMemo
-  const token = useMemo(() => localStorage.getItem("accessToken"), []);
-  const user = useMemo(() => {
-    const userStr = localStorage.getItem("user");
-    return userStr ? JSON.parse(userStr) : null;
-  }, []);
+  const { user, token, logout } = useAuth();
   
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -305,14 +305,12 @@ const Chat: FC = (): JSX.Element | null => {
     setShowMobileChat(false);
   };
   
-  const handleLogout = (): void => {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("user");
+  const handleLogout = async (): Promise<void> => {
     intentionalCloseRef.current = true;
     if (wsRef.current) {
       wsRef.current.close();
     }
+    await logout();
     navigate("/");
   };
   

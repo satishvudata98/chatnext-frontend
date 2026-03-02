@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Chat from "./pages/Chat";
-import { verifyApi } from "./api/api";
+import ProtectedRoute from "./components/ProtectedRoute";
+import { useAuth } from "./context/AuthContext";
 
 export default function App() {
+<<<<<<< Updated upstream
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -33,16 +34,27 @@ export default function App() {
 
   // Show loading while checking auth
   if (isAuthenticated === null) {
+=======
+  const { user, loading } = useAuth();
+  if (loading) {
+>>>>>>> Stashed changes
     return <div>Loading...</div>;
   }
 
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={isAuthenticated ? <Navigate to="/chat" /> : <Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/chat" element={isAuthenticated ? <Chat /> : <Navigate to="/login" />} />
+        <Route path="/" element={user ? <Navigate to="/chat" replace /> : <Home />} />
+        <Route path="/login" element={user ? <Navigate to="/chat" replace /> : <Login />} />
+        <Route path="/register" element={user ? <Navigate to="/chat" replace /> : <Register />} />
+        <Route
+          path="/chat"
+          element={
+            <ProtectedRoute>
+              <Chat />
+            </ProtectedRoute>
+          }
+        />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </BrowserRouter>

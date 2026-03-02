@@ -6,7 +6,7 @@ interface User {
   id: string;
   username: string;
   email: string;
-  online: boolean;
+  online?: boolean;
   last_seen?: number;
 }
 
