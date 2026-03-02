@@ -61,6 +61,22 @@ export async function fetchUsers() {
   return apiRequest("/api/users", "GET");
 }
 
+export async function searchUsersByUsername(username: string) {
+  return apiRequest(`/api/users/search?username=${encodeURIComponent(username)}`, "GET");
+}
+
+export async function sendBuddyRequest(toUserId: string) {
+  return apiRequest("/api/buddy-requests", "POST", { toUserId });
+}
+
+export async function fetchIncomingBuddyRequests() {
+  return apiRequest("/api/buddy-requests", "GET");
+}
+
+export async function respondToBuddyRequest(requestId: string, action: "accept" | "reject") {
+  return apiRequest("/api/buddy-requests/respond", "POST", { requestId, action });
+}
+
 export async function getOrCreateConversation(userId: string) {
   return apiRequest(`/api/conversations?userId=${encodeURIComponent(userId)}`, "GET");
 }

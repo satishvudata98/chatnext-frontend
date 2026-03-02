@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FC, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import UserList from "../components/UserList";
@@ -10,6 +10,10 @@ import {
   updatePublicKey,
   fetchEncryptedPrivateKey,
   storeEncryptedPrivateKey,
+  searchUsersByUsername,
+  sendBuddyRequest,
+  fetchIncomingBuddyRequests,
+  respondToBuddyRequest,
 } from "../api/api";
 import {
   initializeE2EE,
@@ -29,6 +33,15 @@ interface User {
   online?: boolean;
   last_seen?: number;
   public_key?: string;
+}
+
+interface IncomingBuddyRequest {
+  id: string;
+  requester_id: string;
+  receiver_id: string;
+  status: string;
+  created_at: number;
+  requester: User;
 }
 
 const Chat: FC = (): JSX.Element | null => {
@@ -56,12 +69,41 @@ const Chat: FC = (): JSX.Element | null => {
   const [passphrase, setPassphrase] = useState("");
   const [confirmPassphrase, setConfirmPassphrase] = useState("");
   const [passphraseError, setPassphraseError] = useState("");
+  const [incomingBuddyRequests, setIncomingBuddyRequests] = useState<IncomingBuddyRequest[]>([]);
+  const [buddySearchResults, setBuddySearchResults] = useState<User[]>([]);
+  const [searchingBuddies, setSearchingBuddies] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
   const maxReconnectAttempts = 5;
   const intentionalCloseRef = useRef<boolean>(false);
+
+  const loadBuddyUsers = useCallback(async (): Promise<void> => {
+    const data = await fetchUsers() as { users?: User[] };
+    const nextUsers = data.users || [];
+    setUsers(nextUsers);
+    setSelectedUser((previousSelectedUser) => {
+      if (!previousSelectedUser) return null;
+      const stillBuddy = nextUsers.some((nextUser) => nextUser.id === previousSelectedUser.id);
+      if (!stillBuddy) {
+        setSelectedConversationId(null);
+        setShowMobileChat(false);
+        return null;
+      }
+      const refreshedSelected = nextUsers.find((nextUser) => nextUser.id === previousSelectedUser.id);
+      return refreshedSelected || previousSelectedUser;
+    });
+  }, []);
+
+  const loadIncomingBuddyRequests = useCallback(async (): Promise<void> => {
+    const data = await fetchIncomingBuddyRequests() as { incomingRequests?: IncomingBuddyRequest[] };
+    setIncomingBuddyRequests(data.incomingRequests || []);
+  }, []);
+
+  const loadBuddyData = useCallback(async (): Promise<void> => {
+    await Promise.all([loadBuddyUsers(), loadIncomingBuddyRequests()]);
+  }, [loadBuddyUsers, loadIncomingBuddyRequests]);
 
   const syncPublicKeyToServer = async (): Promise<void> => {
     const publicKey = await getUserPublicKey();
@@ -87,7 +129,6 @@ const Chat: FC = (): JSX.Element | null => {
     setShowPassphrasePrompt(true);
   };
 
-  // Redirect to login if not authenticated and initialize E2EE state.
   useEffect(() => {
     if (!token || !user) {
       navigate("/login");
@@ -129,7 +170,6 @@ const Chat: FC = (): JSX.Element | null => {
 
         const localPublicKey = hasSavedKey ? await getUserPublicKey() : null;
 
-        // Local key exists but doesn't match backed-up identity key: restore required.
         if (
           hasSavedKey &&
           serverBackup &&
@@ -151,7 +191,6 @@ const Chat: FC = (): JSX.Element | null => {
           await storeUserKeyPair(restored);
         }
 
-        // No local key on this device: restore from backup if available.
         if (!hasSavedKey) {
           if (!sessionPassphrase) {
             openPassphrasePrompt(serverBackup ? "restore" : "setup", serverBackup);
@@ -176,7 +215,6 @@ const Chat: FC = (): JSX.Element | null => {
             await storeEncryptedPrivateKey(encryptedKeyData);
           }
         } else if (!serverBackup) {
-          // Local key exists but never backed up (common for Google-first users).
           if (!sessionPassphrase) {
             openPassphrasePrompt("setup");
             return;
@@ -250,29 +288,64 @@ const Chat: FC = (): JSX.Element | null => {
     }
   };
 
-  // Fetch users list
   useEffect(() => {
     if (!token || !e2eeReady) return;
 
     (async (): Promise<void> => {
       setLoadingUsers(true);
       try {
-        const data = await fetchUsers();
-        const typedData = data as { users: User[] };
-        setUsers(typedData.users || []);
+        await loadBuddyData();
       } catch (err) {
-        console.error("Error fetching users:", err);
-        setError("Failed to load users");
+        console.error("Error fetching buddy data:", err);
+        setError("Failed to load buddies");
       } finally {
         setLoadingUsers(false);
       }
     })();
-  }, [token, e2eeReady]);
+  }, [token, e2eeReady, loadBuddyData]);
+
+  const handleSearchBuddyUsers = async (username: string): Promise<void> => {
+    const trimmed = username.trim();
+    if (!trimmed) {
+      setBuddySearchResults([]);
+      return;
+    }
+
+    try {
+      setSearchingBuddies(true);
+      const data = await searchUsersByUsername(trimmed) as { users?: User[] };
+      setBuddySearchResults(data.users || []);
+    } catch (searchError) {
+      console.error("Buddy search failed:", searchError);
+      setError("Failed to search users");
+    } finally {
+      setSearchingBuddies(false);
+    }
+  };
+
+  const handleSendBuddyRequest = async (toUserId: string): Promise<void> => {
+    try {
+      await sendBuddyRequest(toUserId);
+      setBuddySearchResults((prev) => prev.filter((candidate) => candidate.id !== toUserId));
+    } catch (sendError) {
+      console.error("Send buddy request failed:", sendError);
+      setError("Failed to send buddy request");
+    }
+  };
+
+  const handleRespondBuddyRequest = async (requestId: string, action: "accept" | "reject"): Promise<void> => {
+    try {
+      await respondToBuddyRequest(requestId, action);
+      await loadBuddyData();
+    } catch (respondError) {
+      console.error("Buddy request response failed:", respondError);
+      setError("Failed to update buddy request");
+    }
+  };
 
   const connectWebSocket = (): void => {
     if (!token || !user || !e2eeReady) return;
 
-    // Close any existing connection first
     if (wsRef.current) {
       try {
         intentionalCloseRef.current = true;
@@ -297,7 +370,6 @@ const Chat: FC = (): JSX.Element | null => {
       const wsUrl = config.getWebSocketUrl();
       const ws = new WebSocket(wsUrl);
 
-      // Set a connection timeout
       const connectionTimeout = setTimeout(() => {
         if (ws.readyState === WebSocket.CONNECTING) {
           console.error("WebSocket connection timeout");
@@ -305,19 +377,16 @@ const Chat: FC = (): JSX.Element | null => {
           setError("Connection timeout. Retrying...");
           attemptReconnect();
         }
-      }, 5000); // 5 second timeout
+      }, 5000);
 
       wsRef.current = ws;
 
       ws.onopen = () => {
         clearTimeout(connectionTimeout);
-        console.log("WebSocket connected");
         setConnectionStatus("connected");
         setWebsocket(ws);
         setError("");
         reconnectAttemptsRef.current = 0;
-
-        // Send authentication with token
         ws.send(JSON.stringify({ type: "connect", token }));
       };
 
@@ -325,12 +394,7 @@ const Chat: FC = (): JSX.Element | null => {
         try {
           const data = JSON.parse(e.data);
 
-          if (data.type === "connected") {
-            console.log("Authenticated with server");
-          }
-
           if (data.type === "user_status") {
-            // Update user online status
             setUsers((prevUsers: User[]): User[] =>
               prevUsers.map((u: User): User =>
                 u.id === data.userId ? { ...u, online: data.online } : u
@@ -339,35 +403,44 @@ const Chat: FC = (): JSX.Element | null => {
           }
 
           if (data.type === "message") {
-            // Message will be handled by ChatWindow component
-            // Dispatch custom event so ChatWindow can update
             globalThis.dispatchEvent(
               new CustomEvent("websocket:message", { detail: data })
             );
           }
 
           if (data.type === "message_delivered") {
-            // Message delivery status update
             globalThis.dispatchEvent(
               new CustomEvent("websocket:message_delivered", { detail: data })
             );
           }
 
           if (data.type === "message_seen") {
-            // Message seen status update
             globalThis.dispatchEvent(
               new CustomEvent("websocket:message_seen", { detail: data })
             );
           }
 
           if (data.type === "unread_count_update") {
-            // Update unread count for conversation, keyed by the sender's user ID
             setUnreadCounts((prev: Map<string, number>) => {
               const updated = new Map(prev);
               if (data.fromUserId) {
                 updated.set(data.fromUserId, data.count);
               }
               return updated;
+            });
+          }
+
+          if (data.type === "buddy_request_incoming" && data.request) {
+            setIncomingBuddyRequests((prev) => {
+              const alreadyExists = prev.some((request) => request.id === data.request.id);
+              if (alreadyExists) return prev;
+              return [data.request as IncomingBuddyRequest, ...prev];
+            });
+          }
+
+          if (data.type === "buddy_request_updated" && data.status === "ACCEPTED") {
+            loadBuddyData().catch((loadError) => {
+              console.error("Failed to refresh buddy data:", loadError);
             });
           }
 
@@ -387,10 +460,7 @@ const Chat: FC = (): JSX.Element | null => {
       };
 
       ws.onclose = () => {
-        console.log("WebSocket closed");
         setConnectionStatus("disconnected");
-
-        // Only attempt to reconnect if it wasn't an intentional close
         if (!intentionalCloseRef.current) {
           attemptReconnect();
         }
@@ -420,7 +490,6 @@ const Chat: FC = (): JSX.Element | null => {
     }, delay);
   };
 
-  // Connect WebSocket on mount
   useEffect(() => {
     if (!token || !user || !e2eeReady) return;
 
@@ -453,10 +522,12 @@ const Chat: FC = (): JSX.Element | null => {
     };
   }, [token, user, e2eeReady]);
 
-  // Handle user selection
-  const handleSelectUser = async (
-    selectedUserData: User
-  ): Promise<void> => {
+  const handleSelectUser = async (selectedUserData: User): Promise<void> => {
+    if (!users.some((u) => u.id === selectedUserData.id)) {
+      setError("User is not in your buddy list");
+      return;
+    }
+
     setSelectedUser(selectedUserData);
     setShowMobileChat(true);
     try {
@@ -465,14 +536,12 @@ const Chat: FC = (): JSX.Element | null => {
       const conversationId = typedData.conversation.id;
       setSelectedConversationId(conversationId);
 
-      // Clear unread count for this user
       setUnreadCounts((prev: Map<string, number>) => {
         const updated = new Map(prev);
         updated.delete(selectedUserData.id);
         return updated;
       });
 
-      // Notify backend that user is viewing this conversation
       if (websocket && websocket.readyState === WebSocket.OPEN) {
         websocket.send(JSON.stringify({
           type: "message_seen",
@@ -508,7 +577,7 @@ const Chat: FC = (): JSX.Element | null => {
       {error && (
         <div className="error-banner">
           <span>{error}</span>
-          <button onClick={() => setError("")} className="error-close">×</button>
+          <button onClick={() => setError("")} className="error-close">x</button>
         </div>
       )}
 
@@ -546,9 +615,7 @@ const Chat: FC = (): JSX.Element | null => {
         </div>
       )}
 
-      <div
-        className={`sidebar-wrapper ${showMobileChat ? "hide-mobile" : ""}`}
-      >
+      <div className={`sidebar-wrapper ${showMobileChat ? "hide-mobile" : ""}`}>
         <UserList
           users={users}
           selectedUser={selectedUser}
@@ -558,12 +625,16 @@ const Chat: FC = (): JSX.Element | null => {
           connectionStatus={connectionStatus}
           onLogout={handleLogout}
           unreadCounts={unreadCounts}
+          incomingBuddyRequests={incomingBuddyRequests}
+          buddySearchResults={buddySearchResults}
+          searchingBuddies={searchingBuddies}
+          onSearchBuddyUsers={handleSearchBuddyUsers}
+          onSendBuddyRequest={handleSendBuddyRequest}
+          onRespondBuddyRequest={handleRespondBuddyRequest}
         />
       </div>
 
-      <div
-        className={`chat-wrapper ${showMobileChat ? "show-mobile" : ""}`}
-      >
+      <div className={`chat-wrapper ${showMobileChat ? "show-mobile" : ""}`}>
         {!e2eeReady ? (
           <div className="chat-loading">
             <div className="loading-spinner"></div>
@@ -588,14 +659,10 @@ const Chat: FC = (): JSX.Element | null => {
         ) : (
           <div className="chat-empty">
             <div className="empty-content">
-              <div className="empty-icon">💬</div>
+              <div className="empty-icon">Chat</div>
               <h2>ChatNext Web</h2>
-              <p>
-                Send and receive messages in real-time.
-              </p>
-              <p className="empty-hint">
-                Select a contact from the sidebar to start chatting
-              </p>
+              <p>Only confirmed buddies can chat with you.</p>
+              <p className="empty-hint">Search users and send a buddy request to start.</p>
             </div>
           </div>
         )}

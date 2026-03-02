@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import type { FC, ChangeEvent } from "react";
+import type { FC, ChangeEvent, FormEvent } from "react";
 import { Search, LogOut, Menu } from "lucide-react";
 
 interface User {
@@ -8,6 +8,15 @@ interface User {
   email: string;
   online?: boolean;
   last_seen?: number;
+}
+
+interface IncomingBuddyRequest {
+  id: string;
+  requester_id: string;
+  receiver_id: string;
+  status: string;
+  created_at: number;
+  requester: User;
 }
 
 interface Props {
@@ -19,6 +28,12 @@ interface Props {
   connectionStatus: string;
   onLogout: () => void | Promise<void>;
   unreadCounts?: Map<string, number>;
+  incomingBuddyRequests: IncomingBuddyRequest[];
+  buddySearchResults: User[];
+  searchingBuddies: boolean;
+  onSearchBuddyUsers: (username: string) => Promise<void>;
+  onSendBuddyRequest: (toUserId: string) => Promise<void>;
+  onRespondBuddyRequest: (requestId: string, action: "accept" | "reject") => Promise<void>;
 }
 
 const UserList: FC<Props> = (props: Props): JSX.Element => {
@@ -30,36 +45,65 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
     currentUser,
     connectionStatus,
     onLogout,
-    unreadCounts = new Map()
+    unreadCounts = new Map(),
+    incomingBuddyRequests,
+    buddySearchResults,
+    searchingBuddies,
+    onSearchBuddyUsers,
+    onSendBuddyRequest,
+    onRespondBuddyRequest,
   } = props;
-  
+
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [showMenu, setShowMenu] = useState(false);
+  const [actingRequestId, setActingRequestId] = useState<string | null>(null);
+  const [sendingRequestUserId, setSendingRequestUserId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  
-  // Close menu when clicking outside
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowMenu(false);
       }
     };
-    
+
     if (showMenu) {
       document.addEventListener("mousedown", handleClickOutside);
     }
-    
+
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showMenu]);
-  
-  const filteredUsers: User[] = users.filter(
-    (u: User): boolean =>
-      u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-  
+
+  const handleSearchSubmit = async (event?: FormEvent): Promise<void> => {
+    if (event) event.preventDefault();
+    const query = searchQuery.trim();
+    if (!query) {
+      await onSearchBuddyUsers("");
+      return;
+    }
+    await onSearchBuddyUsers(query);
+  };
+
+  const handleSendBuddyRequest = async (toUserId: string): Promise<void> => {
+    try {
+      setSendingRequestUserId(toUserId);
+      await onSendBuddyRequest(toUserId);
+    } finally {
+      setSendingRequestUserId(null);
+    }
+  };
+
+  const handleRespond = async (requestId: string, action: "accept" | "reject"): Promise<void> => {
+    try {
+      setActingRequestId(requestId);
+      await onRespondBuddyRequest(requestId, action);
+    } finally {
+      setActingRequestId(null);
+    }
+  };
+
   return (
     <div className="sidebar">
       <div className="sidebar-header">
@@ -95,37 +139,103 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
           </div>
         )}
       </div>
-      
+
       <div className="search-container">
-        <div className="search-box">
-          <Search size={18} className="search-icon" />
+        <form className="search-box" onSubmit={handleSearchSubmit}>
           <input
             type="text"
-            placeholder="Search or start new chat"
+            placeholder="Search username to add buddy"
             value={searchQuery}
             onChange={(e: ChangeEvent<HTMLInputElement>): void =>
               setSearchQuery(e.target.value)
             }
             className="search-input"
-            disabled={loading}
+            disabled={loading || searchingBuddies}
           />
-        </div>
+          <button
+            type="submit"
+            className="search-submit-btn"
+            aria-label="Search usernames"
+            disabled={loading || searchingBuddies}
+          >
+            <Search size={18} className="search-icon" />
+          </button>
+        </form>
       </div>
-      
+
+      {incomingBuddyRequests.length > 0 && (
+        <div className="buddy-request-section">
+          <div className="section-title">Incoming Buddy Requests</div>
+          {incomingBuddyRequests.map((request) => (
+            <div className="buddy-request-item" key={request.id}>
+              <div className="user-avatar">
+                {request.requester.username.charAt(0).toUpperCase()}
+              </div>
+              <div className="user-info">
+                <div className="user-name">{request.requester.username}</div>
+                <div className="user-status">wants to be your buddy</div>
+              </div>
+              <div className="request-actions">
+                <button
+                  className="request-btn accept"
+                  disabled={actingRequestId === request.id}
+                  onClick={() => handleRespond(request.id, "accept")}
+                >
+                  Accept
+                </button>
+                <button
+                  className="request-btn reject"
+                  disabled={actingRequestId === request.id}
+                  onClick={() => handleRespond(request.id, "reject")}
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {searchQuery.trim().length > 0 && (
+        <div className="buddy-search-results">
+          <div className="section-title">Search Results</div>
+          {searchingBuddies ? (
+            <div className="no-users">Searching...</div>
+          ) : buddySearchResults.length === 0 ? (
+            <div className="no-users">No users available to add</div>
+          ) : (
+            buddySearchResults.map((candidate) => (
+              <div className="buddy-search-item" key={candidate.id}>
+                <div className="user-avatar">{candidate.username.charAt(0).toUpperCase()}</div>
+                <div className="user-info">
+                  <div className="user-name">{candidate.username}</div>
+                  <div className={`user-status ${candidate.online ? "online" : "offline"}`}>
+                    {candidate.online ? "online" : "offline"}
+                  </div>
+                </div>
+                <button
+                  className="add-buddy-btn"
+                  disabled={sendingRequestUserId === candidate.id}
+                  onClick={() => handleSendBuddyRequest(candidate.id)}
+                >
+                  {sendingRequestUserId === candidate.id ? "Sending..." : "Add Buddy"}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
       <div className="users-list">
         {loading ? (
           <div className="loading-state">
             <div className="loading-spinner"></div>
-            <p>Loading contacts...</p>
+            <p>Loading buddies...</p>
           </div>
-        ) : filteredUsers.length === 0 ? (
-          <div className="no-users">
-            {users.length === 0
-              ? "No contacts available"
-              : "No results found"}
-          </div>
+        ) : users.length === 0 ? (
+          <div className="no-users">No buddies yet. Search to add one.</div>
         ) : (
-          filteredUsers.map((u) => (
+          users.map((u) => (
             <div
               key={u.id}
               className={`user-item ${u.id === selectedUser?.id ? "active" : ""}`}

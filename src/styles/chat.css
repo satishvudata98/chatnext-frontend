@@ -248,6 +248,101 @@
   color: var(--wa-text-secondary);
 }
 
+.search-submit-btn {
+  border: none;
+  background: transparent;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.search-submit-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.search-submit-btn:disabled {
+  cursor: not-allowed;
+}
+
+.buddy-request-section,
+.buddy-search-results {
+  border-top: 1px solid var(--wa-border);
+  background: var(--wa-white);
+  padding: 8px 0;
+}
+
+.section-title {
+  font-size: 12px;
+  color: var(--wa-text-secondary);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 4px 16px 8px;
+}
+
+.buddy-request-item,
+.buddy-search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+}
+
+.request-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.request-btn {
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.request-btn.accept {
+  background: #d7f5de;
+  color: #0f5132;
+}
+
+.request-btn.reject {
+  background: #fde2e2;
+  color: #a61b1b;
+}
+
+.request-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.add-buddy-btn {
+  border: none;
+  border-radius: 6px;
+  background: var(--wa-green);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.add-buddy-btn:hover:not(:disabled) {
+  background: var(--wa-green-dark);
+}
+
+.add-buddy-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 /* Users List */
 .users-list {
   flex: 1;
