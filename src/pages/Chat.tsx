@@ -1,11 +1,24 @@
 import { useEffect, useRef, useState } from "react";
-import type { FC } from "react";
+import type { FC, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import UserList from "../components/UserList";
 import ChatWindow from "../components/ChatWindow";
 import { config } from "../config/config";
-import { fetchUsers, getOrCreateConversation, updatePublicKey, fetchEncryptedPrivateKey } from "../api/api";
-import { initializeE2EE, getUserPublicKey, restoreKeyPairFromServer, storeUserKeyPair } from "../utils/crypto";
+import {
+  fetchUsers,
+  getOrCreateConversation,
+  updatePublicKey,
+  fetchEncryptedPrivateKey,
+  storeEncryptedPrivateKey,
+} from "../api/api";
+import {
+  initializeE2EE,
+  getUserPublicKey,
+  restoreKeyPairFromServer,
+  loadUserKeyPair,
+  storeUserKeyPair,
+  encryptPrivateKeyWithPassword,
+} from "../utils/crypto";
 import { useAuth } from "../context/AuthContext";
 import "../styles/chat.css";
 
@@ -31,6 +44,18 @@ const Chat: FC = (): JSX.Element | null => {
   const [websocket, setWebsocket] = useState<WebSocket | null>(null);
   const [showMobileChat, setShowMobileChat] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState<Map<string, number>>(new Map());
+  const [e2eeReady, setE2eeReady] = useState(false);
+  const [showPassphrasePrompt, setShowPassphrasePrompt] = useState(false);
+  const [passphraseMode, setPassphraseMode] = useState<"setup" | "restore">("setup");
+  const [pendingBackupData, setPendingBackupData] = useState<{
+    encryptedKey: string;
+    salt: string;
+    iv: string;
+    publicKey: string;
+  } | null>(null);
+  const [passphrase, setPassphrase] = useState("");
+  const [confirmPassphrase, setConfirmPassphrase] = useState("");
+  const [passphraseError, setPassphraseError] = useState("");
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -38,7 +63,31 @@ const Chat: FC = (): JSX.Element | null => {
   const maxReconnectAttempts = 5;
   const intentionalCloseRef = useRef<boolean>(false);
 
-  // Redirect to login if not authenticated
+  const syncPublicKeyToServer = async (): Promise<void> => {
+    const publicKey = await getUserPublicKey();
+    if (publicKey) {
+      await updatePublicKey(publicKey);
+    }
+  };
+
+  const openPassphrasePrompt = (
+    mode: "setup" | "restore",
+    backupData: {
+      encryptedKey: string;
+      salt: string;
+      iv: string;
+      publicKey: string;
+    } | null = null
+  ): void => {
+    setPassphraseMode(mode);
+    setPendingBackupData(backupData);
+    setPassphrase("");
+    setConfirmPassphrase("");
+    setPassphraseError("");
+    setShowPassphrasePrompt(true);
+  };
+
+  // Redirect to login if not authenticated and initialize E2EE state.
   useEffect(() => {
     if (!token || !user) {
       navigate("/login");
@@ -47,50 +96,163 @@ const Chat: FC = (): JSX.Element | null => {
 
     (async (): Promise<void> => {
       try {
-        // Check if we need to restore encrypted private key from server
-        let keyPair = await initializeE2EE();
-        const hasSavedKey = localStorage.getItem("e2ee_user_keypair");
-        if (!hasSavedKey) {
-          const password = sessionStorage.getItem("tempPassword");
-          if (password) {
-            try {
-              const encryptedData = await fetchEncryptedPrivateKey();
-              const typedData = encryptedData as {
-                success?: boolean;
-                encryptedKey?: string;
-                salt?: string;
-                iv?: string;
-                publicKey?: string;
-              };
-              if (typedData.encryptedKey && typedData.salt && typedData.iv && typedData.publicKey) {
-                keyPair = await restoreKeyPairFromServer(
-                  typedData.encryptedKey,
-                  typedData.salt,
-                  typedData.iv,
-                  typedData.publicKey,
-                  password
-                );
-                await storeUserKeyPair(keyPair);
-              }
-            } catch (error) {
-              // This is okay - we just generated a new one above
-            }
-            sessionStorage.removeItem("tempPassword");
+        setE2eeReady(false);
+        const existingKeyPair = await loadUserKeyPair();
+        const hasSavedKey = Boolean(existingKeyPair);
+        const sessionPassphrase = sessionStorage.getItem("tempPassword");
+        let serverBackup: {
+          encryptedKey: string;
+          salt: string;
+          iv: string;
+          publicKey: string;
+        } | null = null;
+
+        try {
+          const encryptedData = await fetchEncryptedPrivateKey();
+          const typedData = encryptedData as {
+            encryptedKey?: string;
+            salt?: string;
+            iv?: string;
+            publicKey?: string;
+          };
+          if (typedData.encryptedKey && typedData.salt && typedData.iv && typedData.publicKey) {
+            serverBackup = {
+              encryptedKey: typedData.encryptedKey,
+              salt: typedData.salt,
+              iv: typedData.iv,
+              publicKey: typedData.publicKey,
+            };
           }
+        } catch {
+          // No backup on server yet.
         }
-        const publicKey = await getUserPublicKey();
-        if (publicKey) {
-          await updatePublicKey(publicKey);
+
+        const localPublicKey = hasSavedKey ? await getUserPublicKey() : null;
+
+        // Local key exists but doesn't match backed-up identity key: restore required.
+        if (
+          hasSavedKey &&
+          serverBackup &&
+          localPublicKey &&
+          localPublicKey !== serverBackup.publicKey
+        ) {
+          if (!sessionPassphrase) {
+            openPassphrasePrompt("restore", serverBackup);
+            return;
+          }
+
+          const restored = await restoreKeyPairFromServer(
+            serverBackup.encryptedKey,
+            serverBackup.salt,
+            serverBackup.iv,
+            serverBackup.publicKey,
+            sessionPassphrase
+          );
+          await storeUserKeyPair(restored);
         }
-      } catch (error) {
+
+        // No local key on this device: restore from backup if available.
+        if (!hasSavedKey) {
+          if (!sessionPassphrase) {
+            openPassphrasePrompt(serverBackup ? "restore" : "setup", serverBackup);
+            return;
+          }
+
+          if (serverBackup) {
+            const restored = await restoreKeyPairFromServer(
+              serverBackup.encryptedKey,
+              serverBackup.salt,
+              serverBackup.iv,
+              serverBackup.publicKey,
+              sessionPassphrase
+            );
+            await storeUserKeyPair(restored);
+          } else {
+            const generatedKeyPair = await initializeE2EE();
+            const encryptedKeyData = await encryptPrivateKeyWithPassword(
+              generatedKeyPair.privateKey,
+              sessionPassphrase
+            );
+            await storeEncryptedPrivateKey(encryptedKeyData);
+          }
+        } else if (!serverBackup) {
+          // Local key exists but never backed up (common for Google-first users).
+          if (!sessionPassphrase) {
+            openPassphrasePrompt("setup");
+            return;
+          }
+
+          const localKeyPairForBackup = existingKeyPair || await initializeE2EE();
+          const encryptedKeyData = await encryptPrivateKeyWithPassword(
+            localKeyPairForBackup.privateKey,
+            sessionPassphrase
+          );
+          await storeEncryptedPrivateKey(encryptedKeyData);
+        }
+
+        await syncPublicKeyToServer();
+        setE2eeReady(true);
+      } catch (initError) {
+        console.error("E2EE init failed:", initError);
         setError("Failed to initialize encryption");
       }
     })();
   }, [navigate, token, user]);
 
+  const handlePassphraseSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    setPassphraseError("");
+
+    if (passphrase.length < 8) {
+      setPassphraseError("Passphrase must be at least 8 characters.");
+      return;
+    }
+
+    if (passphraseMode === "setup" && passphrase !== confirmPassphrase) {
+      setPassphraseError("Passphrase confirmation does not match.");
+      return;
+    }
+
+    try {
+      setE2eeReady(false);
+      sessionStorage.setItem("tempPassword", passphrase);
+
+      if (passphraseMode === "restore" && pendingBackupData) {
+        const restored = await restoreKeyPairFromServer(
+          pendingBackupData.encryptedKey,
+          pendingBackupData.salt,
+          pendingBackupData.iv,
+          pendingBackupData.publicKey,
+          passphrase
+        );
+        await storeUserKeyPair(restored);
+      } else {
+        const localKeyPair = await loadUserKeyPair();
+        const keyPair = localKeyPair || await initializeE2EE();
+        const encryptedKeyData = await encryptPrivateKeyWithPassword(
+          keyPair.privateKey,
+          passphrase
+        );
+        await storeEncryptedPrivateKey(encryptedKeyData);
+      }
+
+      await syncPublicKeyToServer();
+      setShowPassphrasePrompt(false);
+      setPendingBackupData(null);
+      setE2eeReady(true);
+    } catch (passphraseSubmitError) {
+      console.error("Passphrase flow failed:", passphraseSubmitError);
+      setPassphraseError(
+        passphraseMode === "restore"
+          ? "Passphrase is incorrect or key restore failed."
+          : "Failed to save encrypted key backup."
+      );
+    }
+  };
+
   // Fetch users list
   useEffect(() => {
-    if (!token) return;
+    if (!token || !e2eeReady) return;
 
     (async (): Promise<void> => {
       setLoadingUsers(true);
@@ -105,10 +267,10 @@ const Chat: FC = (): JSX.Element | null => {
         setLoadingUsers(false);
       }
     })();
-  }, [token]);
+  }, [token, e2eeReady]);
 
   const connectWebSocket = (): void => {
-    if (!token || !user) return;
+    if (!token || !user || !e2eeReady) return;
 
     // Close any existing connection first
     if (wsRef.current) {
@@ -260,7 +422,7 @@ const Chat: FC = (): JSX.Element | null => {
 
   // Connect WebSocket on mount
   useEffect(() => {
-    if (!token || !user) return;
+    if (!token || !user || !e2eeReady) return;
 
     connectWebSocket();
 
@@ -289,7 +451,7 @@ const Chat: FC = (): JSX.Element | null => {
         wsRef.current = null;
       }
     };
-  }, [token, user]);
+  }, [token, user, e2eeReady]);
 
   // Handle user selection
   const handleSelectUser = async (
@@ -350,6 +512,40 @@ const Chat: FC = (): JSX.Element | null => {
         </div>
       )}
 
+      {showPassphrasePrompt && (
+        <div className="e2ee-modal-backdrop">
+          <div className="e2ee-modal">
+            <h3>{passphraseMode === "restore" ? "Unlock Encrypted Messages" : "Set Backup Passphrase"}</h3>
+            <p>
+              {passphraseMode === "restore"
+                ? "Enter your existing E2EE backup passphrase to restore your private key on this device."
+                : "Create an E2EE backup passphrase. Use this same passphrase on every device to restore encrypted messages."}
+            </p>
+            <form onSubmit={handlePassphraseSubmit} className="e2ee-form">
+              <input
+                type="password"
+                placeholder="E2EE backup passphrase"
+                value={passphrase}
+                onChange={(e) => setPassphrase(e.target.value)}
+                autoFocus
+              />
+              {passphraseMode === "setup" && (
+                <input
+                  type="password"
+                  placeholder="Confirm passphrase"
+                  value={confirmPassphrase}
+                  onChange={(e) => setConfirmPassphrase(e.target.value)}
+                />
+              )}
+              {passphraseError && <div className="e2ee-error">{passphraseError}</div>}
+              <button type="submit" className="e2ee-submit-btn">
+                {passphraseMode === "restore" ? "Unlock Messages" : "Save Passphrase"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div
         className={`sidebar-wrapper ${showMobileChat ? "hide-mobile" : ""}`}
       >
@@ -368,7 +564,12 @@ const Chat: FC = (): JSX.Element | null => {
       <div
         className={`chat-wrapper ${showMobileChat ? "show-mobile" : ""}`}
       >
-        {connectionStatus === "connected" &&
+        {!e2eeReady ? (
+          <div className="chat-loading">
+            <div className="loading-spinner"></div>
+            <p>Preparing end-to-end encryption...</p>
+          </div>
+        ) : connectionStatus === "connected" &&
         selectedUser &&
         selectedConversationId &&
         websocket ? (

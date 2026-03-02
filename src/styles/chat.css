@@ -863,3 +863,75 @@
     font-size: 24px;
   }
 }
+
+/* E2EE passphrase modal */
+.e2ee-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 16px;
+}
+
+.e2ee-modal {
+  background: var(--wa-white);
+  width: 100%;
+  max-width: 420px;
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
+  padding: 20px;
+}
+
+.e2ee-modal h3 {
+  font-size: 18px;
+  color: var(--wa-text);
+  margin-bottom: 10px;
+}
+
+.e2ee-modal p {
+  font-size: 14px;
+  color: var(--wa-text-secondary);
+  line-height: 1.4;
+  margin-bottom: 14px;
+}
+
+.e2ee-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.e2ee-form input {
+  border: 1px solid var(--wa-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+}
+
+.e2ee-form input:focus {
+  border-color: var(--wa-green-dark);
+}
+
+.e2ee-error {
+  font-size: 13px;
+  color: #c62828;
+}
+
+.e2ee-submit-btn {
+  background: var(--wa-green);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.e2ee-submit-btn:hover {
+  background: var(--wa-green-dark);
+}
