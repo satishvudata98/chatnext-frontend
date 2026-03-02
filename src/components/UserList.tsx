@@ -6,7 +6,7 @@ interface User {
   id: string;
   username: string;
   email: string;
-  online: boolean;
+  online?: boolean;
   last_seen?: number;
 }
 
@@ -17,7 +17,7 @@ interface Props {
   loading?: boolean;
   currentUser: User;
   connectionStatus: string;
-  onLogout: () => void;
+  onLogout: () => void | Promise<void>;
   unreadCounts?: Map<string, number>;
 }
 

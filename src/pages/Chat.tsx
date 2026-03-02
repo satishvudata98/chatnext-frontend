@@ -1,32 +1,27 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FC } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 import UserList from "../components/UserList";
 import ChatWindow from "../components/ChatWindow";
 import { config } from "../config/config";
 import { fetchUsers, getOrCreateConversation, updatePublicKey, fetchEncryptedPrivateKey } from "../api/api";
 import { initializeE2EE, getUserPublicKey, restoreKeyPairFromServer, storeUserKeyPair } from "../utils/crypto";
+import { useAuth } from "../context/AuthContext";
 import "../styles/chat.css";
 
 interface User {
   id: string;
   username: string;
   email: string;
-  online: boolean;
+  online?: boolean;
   last_seen?: number;
   public_key?: string;
 }
 
 const Chat: FC = (): JSX.Element | null => {
   const navigate = useNavigate();
-  
-  // Initialize from localStorage only once using useMemo
-  const token = useMemo(() => localStorage.getItem("accessToken"), []);
-  const user = useMemo(() => {
-    const userStr = localStorage.getItem("user");
-    return userStr ? JSON.parse(userStr) : null;
-  }, []);
-  
+  const { user, token, logout } = useAuth();
+
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -36,13 +31,13 @@ const Chat: FC = (): JSX.Element | null => {
   const [websocket, setWebsocket] = useState<WebSocket | null>(null);
   const [showMobileChat, setShowMobileChat] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState<Map<string, number>>(new Map());
-  
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
   const maxReconnectAttempts = 5;
   const intentionalCloseRef = useRef<boolean>(false);
-  
+
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!token || !user) {
@@ -60,10 +55,10 @@ const Chat: FC = (): JSX.Element | null => {
           if (password) {
             try {
               const encryptedData = await fetchEncryptedPrivateKey();
-              const typedData = encryptedData as { 
-                success?: boolean; 
-                encryptedKey?: string; 
-                salt?: string; 
+              const typedData = encryptedData as {
+                success?: boolean;
+                encryptedKey?: string;
+                salt?: string;
                 iv?: string;
                 publicKey?: string;
               };
@@ -92,11 +87,11 @@ const Chat: FC = (): JSX.Element | null => {
       }
     })();
   }, [navigate, token, user]);
-  
+
   // Fetch users list
   useEffect(() => {
     if (!token) return;
-    
+
     (async (): Promise<void> => {
       setLoadingUsers(true);
       try {
@@ -111,10 +106,10 @@ const Chat: FC = (): JSX.Element | null => {
       }
     })();
   }, [token]);
-  
+
   const connectWebSocket = (): void => {
     if (!token || !user) return;
-    
+
     // Close any existing connection first
     if (wsRef.current) {
       try {
@@ -135,11 +130,11 @@ const Chat: FC = (): JSX.Element | null => {
       wsRef.current = null;
       intentionalCloseRef.current = false;
     }
-    
+
     try {
       const wsUrl = config.getWebSocketUrl();
       const ws = new WebSocket(wsUrl);
-      
+
       // Set a connection timeout
       const connectionTimeout = setTimeout(() => {
         if (ws.readyState === WebSocket.CONNECTING) {
@@ -149,9 +144,9 @@ const Chat: FC = (): JSX.Element | null => {
           attemptReconnect();
         }
       }, 5000); // 5 second timeout
-      
+
       wsRef.current = ws;
-      
+
       ws.onopen = () => {
         clearTimeout(connectionTimeout);
         console.log("WebSocket connected");
@@ -159,19 +154,19 @@ const Chat: FC = (): JSX.Element | null => {
         setWebsocket(ws);
         setError("");
         reconnectAttemptsRef.current = 0;
-        
+
         // Send authentication with token
         ws.send(JSON.stringify({ type: "connect", token }));
       };
-      
+
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
-          
+
           if (data.type === "connected") {
             console.log("Authenticated with server");
           }
-          
+
           if (data.type === "user_status") {
             // Update user online status
             setUsers((prevUsers: User[]): User[] =>
@@ -180,7 +175,7 @@ const Chat: FC = (): JSX.Element | null => {
               )
             );
           }
-          
+
           if (data.type === "message") {
             // Message will be handled by ChatWindow component
             // Dispatch custom event so ChatWindow can update
@@ -213,7 +208,7 @@ const Chat: FC = (): JSX.Element | null => {
               return updated;
             });
           }
-          
+
           if (data.type === "error") {
             console.error("Server error:", data.message);
             setError(data.message);
@@ -222,17 +217,17 @@ const Chat: FC = (): JSX.Element | null => {
           console.error("Error parsing message:", err);
         }
       };
-      
+
       ws.onerror = (err: Event) => {
         console.error("WebSocket error:", err);
         setConnectionStatus("error");
         setError("Connection error. Reconnecting...");
       };
-      
+
       ws.onclose = () => {
         console.log("WebSocket closed");
         setConnectionStatus("disconnected");
-        
+
         // Only attempt to reconnect if it wasn't an intentional close
         if (!intentionalCloseRef.current) {
           attemptReconnect();
@@ -244,38 +239,38 @@ const Chat: FC = (): JSX.Element | null => {
       attemptReconnect();
     }
   };
-  
+
   const attemptReconnect = () => {
     if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
       setError("Could not connect to server. Please refresh the page.");
       return;
     }
-    
+
     reconnectAttemptsRef.current += 1;
     const delay = Math.min(
       1000 * Math.pow(2, reconnectAttemptsRef.current - 1),
       10000
     );
-    
+
     reconnectTimeoutRef.current = setTimeout(() => {
       setConnectionStatus("reconnecting");
       connectWebSocket();
     }, delay);
   };
-  
+
   // Connect WebSocket on mount
   useEffect(() => {
     if (!token || !user) return;
-    
+
     connectWebSocket();
-    
+
     return () => {
       intentionalCloseRef.current = true;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
-      
+
       if (wsRef.current) {
         try {
           wsRef.current.onopen = null;
@@ -295,7 +290,7 @@ const Chat: FC = (): JSX.Element | null => {
       }
     };
   }, [token, user]);
-  
+
   // Handle user selection
   const handleSelectUser = async (
     selectedUserData: User
@@ -307,7 +302,7 @@ const Chat: FC = (): JSX.Element | null => {
       const typedData = data as { conversation: { id: string } };
       const conversationId = typedData.conversation.id;
       setSelectedConversationId(conversationId);
-      
+
       // Clear unread count for this user
       setUnreadCounts((prev: Map<string, number>) => {
         const updated = new Map(prev);
@@ -328,26 +323,24 @@ const Chat: FC = (): JSX.Element | null => {
       setError("Failed to load conversation");
     }
   };
-  
+
   const handleBackToList = (): void => {
     setShowMobileChat(false);
   };
-  
-  const handleLogout = (): void => {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("user");
+
+  const handleLogout = async (): Promise<void> => {
     intentionalCloseRef.current = true;
     if (wsRef.current) {
       wsRef.current.close();
     }
+    await logout();
     navigate("/");
   };
-  
+
   if (!token || !user) {
     return null;
   }
-  
+
   return (
     <div className="chat-container">
       {error && (
@@ -356,7 +349,7 @@ const Chat: FC = (): JSX.Element | null => {
           <button onClick={() => setError("")} className="error-close">×</button>
         </div>
       )}
-      
+
       <div
         className={`sidebar-wrapper ${showMobileChat ? "hide-mobile" : ""}`}
       >
@@ -371,7 +364,7 @@ const Chat: FC = (): JSX.Element | null => {
           unreadCounts={unreadCounts}
         />
       </div>
-      
+
       <div
         className={`chat-wrapper ${showMobileChat ? "show-mobile" : ""}`}
       >
