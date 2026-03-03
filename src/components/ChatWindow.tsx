@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { FC, ChangeEvent, FormEvent } from "react";
 import { ArrowLeft, ImagePlus, Send } from "lucide-react";
 import {
@@ -58,6 +58,40 @@ interface Props {
 
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png"]);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function getDayKey(unixTimestamp: number): string {
+  const date = new Date(unixTimestamp * 1000);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function formatDayLabel(unixTimestamp: number): string {
+  const messageDate = new Date(unixTimestamp * 1000);
+  const today = new Date();
+  const messageDay = new Date(
+    messageDate.getFullYear(),
+    messageDate.getMonth(),
+    messageDate.getDate(),
+  );
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const dayDiff = Math.round((todayDay.getTime() - messageDay.getTime()) / DAY_MS);
+
+  if (dayDiff === 0) return "Today";
+  if (dayDiff === 1) return "Yesterday";
+
+  if (messageDay.getFullYear() === todayDay.getFullYear()) {
+    return messageDay.toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "long",
+    });
+  }
+
+  return messageDay.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
 
 function parseDecryptedPayload(rawMessage: string):
   | { contentType: "text"; text: string }
@@ -567,18 +601,7 @@ const ChatWindow: FC<Props> = ({
 
   const formatTime = (timestamp: number): string => {
     const date = new Date(timestamp * 1000);
-    const today = new Date();
-
-    if (date.toDateString() === today.toDateString()) {
-      return date.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    }
-
-    return date.toLocaleDateString([], {
-      month: "short",
-      day: "numeric",
+    return date.toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -613,20 +636,33 @@ const ChatWindow: FC<Props> = ({
             <p>No messages yet. Say hello!</p>
           </div>
         ) : (
-          messages.map((m) => (
-            <MessageBubble
-              key={m.id}
-              isOwn={m.fromUserId === user.id}
-              message={m.message}
-              contentType={m.contentType}
-              imageUrl={m.imageUrl}
-              imageFileName={m.imageFileName}
-              timestamp={m.createdAt}
-              username={m.fromUsername}
-              formatTime={formatTime}
-              status={m.status}
-            />
-          ))
+          messages.map((m, index) => {
+            const previousMessage = index > 0 ? messages[index - 1] : null;
+            const showDaySeparator =
+              !previousMessage || getDayKey(previousMessage.createdAt) !== getDayKey(m.createdAt);
+            const dayLabel = formatDayLabel(m.createdAt);
+
+            return (
+              <Fragment key={m.id}>
+                {showDaySeparator && (
+                  <div className="message-day-separator">
+                    <span>{dayLabel}</span>
+                  </div>
+                )}
+                <MessageBubble
+                  isOwn={m.fromUserId === user.id}
+                  message={m.message}
+                  contentType={m.contentType}
+                  imageUrl={m.imageUrl}
+                  imageFileName={m.imageFileName}
+                  timestamp={m.createdAt}
+                  username={m.fromUsername}
+                  formatTime={formatTime}
+                  status={m.status}
+                />
+              </Fragment>
+            );
+          })
         )}
         <div ref={messagesEndRef} />
       </div>
