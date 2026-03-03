@@ -1,4 +1,4 @@
-import { FC } from "react";
+import type { FC } from "react";
 import { useTheme } from "../context/ThemeContext";
 
 const ThemeSwitcher: FC = () => {
