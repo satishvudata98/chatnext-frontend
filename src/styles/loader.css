@@ -1,0 +1,31 @@
+.app-loader {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: linear-gradient(180deg, #f7faf9 0%, #eef6f2 100%);
+  color: #1f2937;
+}
+
+.app-loader-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px solid #b7e7ce;
+  border-top-color: #25d366;
+  animation: appLoaderSpin 0.8s linear infinite;
+}
+
+.app-loader-text {
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: #4b5563;
+}
+
+@keyframes appLoaderSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -4,12 +4,13 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Chat from "./pages/Chat";
 import ProtectedRoute from "./components/ProtectedRoute";
+import AppLoader from "./components/AppLoader";
 import { useAuth } from "./context/AuthContext";
 
 export default function App() {
   const { user, loading } = useAuth();
   if (loading) {
-    return <div>Loading...</div>;
+    return <AppLoader />;
   }
 
   return (

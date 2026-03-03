@@ -398,9 +398,29 @@ const Chat: FC = (): JSX.Element | null => {
           if (data.type === "user_status") {
             setUsers((prevUsers: User[]): User[] =>
               prevUsers.map((u: User): User =>
-                u.id === data.userId ? { ...u, online: data.online } : u
+                u.id === data.userId
+                  ? {
+                    ...u,
+                    online: data.online,
+                    last_seen: typeof data.lastSeen === "number" ? data.lastSeen : u.last_seen,
+                  }
+                  : u
               )
             );
+
+            setSelectedUser((prevSelectedUser) => {
+              if (!prevSelectedUser || prevSelectedUser.id !== data.userId) {
+                return prevSelectedUser;
+              }
+
+              return {
+                ...prevSelectedUser,
+                online: data.online,
+                last_seen: typeof data.lastSeen === "number"
+                  ? data.lastSeen
+                  : prevSelectedUser.last_seen,
+              };
+            });
           }
 
           if (data.type === "message") {
@@ -551,13 +571,6 @@ const Chat: FC = (): JSX.Element | null => {
         return updated;
       });
 
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
-        websocket.send(JSON.stringify({
-          type: "message_seen",
-          conversationId: conversationId,
-          messageIds: []
-        }));
-      }
     } catch (err) {
       if (selectionRequestIdRef.current !== requestId) {
         return;

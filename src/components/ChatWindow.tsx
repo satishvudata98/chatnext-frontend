@@ -22,6 +22,7 @@ interface User {
   username: string;
   email: string;
   online?: boolean;
+  last_seen?: number;
 }
 
 interface ImageMessagePayload {
@@ -174,6 +175,49 @@ const ChatWindow: FC<Props> = ({
     scrollToBottom();
   }, [messages]);
 
+  const sendSeenReceipt = (messageIds: string[]): void => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const uniqueIds = [...new Set(messageIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return;
+
+    ws.send(JSON.stringify({
+      type: "message_seen",
+      conversationId,
+      messageIds: uniqueIds,
+    }));
+  };
+
+  const formatLastActive = (lastSeen?: number): string => {
+    if (!lastSeen) return "offline";
+
+    const seenDate = new Date(lastSeen * 1000);
+    const now = new Date();
+    const seenDay = new Date(seenDate.getFullYear(), seenDate.getMonth(), seenDate.getDate());
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const timeText = seenDate.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    if (seenDay.getTime() === today.getTime()) {
+      return `last active today at ${timeText}`;
+    }
+
+    if (seenDay.getTime() === yesterday.getTime()) {
+      return `last active yesterday at ${timeText}`;
+    }
+
+    const hasSameYear = seenDate.getFullYear() === now.getFullYear();
+    const dateText = seenDate.toLocaleDateString([], hasSameYear
+      ? { day: "numeric", month: "short" }
+      : { day: "numeric", month: "short", year: "numeric" });
+
+    return `last active ${dateText} at ${timeText}`;
+  };
+
+  const statusLabel = selectedUser.online ? "online" : formatLastActive(selectedUser.last_seen);
+
   const resolveDecryptedImageUrl = async (
     imagePayload: ImageMessagePayload,
   ): Promise<string | undefined> => {
@@ -257,6 +301,8 @@ const ChatWindow: FC<Props> = ({
 
   useEffect(() => {
     const establishKey = async (): Promise<void> => {
+      if (!selectedUser?.id) return;
+
       try {
         let key = await loadConversationKeyForDecryption(conversationId);
         if (key) {
@@ -280,10 +326,8 @@ const ChatWindow: FC<Props> = ({
       }
     };
 
-    if (selectedUser) {
-      establishKey();
-    }
-  }, [conversationId, selectedUser]);
+    establishKey();
+  }, [conversationId, selectedUser?.id]);
 
   useEffect(() => {
     const handleWebSocketMessage = async (event: Event): Promise<void> => {
@@ -351,6 +395,10 @@ const ChatWindow: FC<Props> = ({
           updatedMessages.sort((a, b) => a.createdAt - b.createdAt);
           return updatedMessages;
         });
+
+        if (data.fromUserId !== user.id) {
+          sendSeenReceipt([data.id]);
+        }
       }
     };
 
@@ -378,15 +426,14 @@ const ChatWindow: FC<Props> = ({
       const data = customEvent.detail;
 
       if (data.conversationId === conversationId) {
+        if (!Array.isArray(data.messageIds) || data.messageIds.length === 0) return;
+
         setMessages((prev: Message[]): Message[] =>
           prev.map((msg: Message): Message => {
-            if (!msg.id.startsWith("temp-") && data.messageIds.length > 0) {
+            if (!msg.id.startsWith("temp-")) {
               return data.messageIds.includes(msg.id)
                 ? { ...msg, status: "seen" }
                 : msg;
-            }
-            if (data.messageIds.length === 0) {
-              return { ...msg, status: "seen" };
             }
             return msg;
           }),
@@ -403,7 +450,7 @@ const ChatWindow: FC<Props> = ({
       globalThis.removeEventListener("websocket:message_delivered", handleMessageDelivered);
       globalThis.removeEventListener("websocket:message_seen", handleMessageSeen);
     };
-  }, [conversationId, user.id]);
+  }, [conversationId, user.id, ws]);
 
   useEffect(() => {
     const loadMessages = async (): Promise<void> => {
@@ -445,13 +492,11 @@ const ChatWindow: FC<Props> = ({
           transformedMessages.sort((a, b) => a.createdAt - b.createdAt);
           setMessages(transformedMessages);
 
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-              type: "message_seen",
-              conversationId,
-              messageIds: [],
-            }));
-          }
+          const unreadIncomingIds = transformedMessages
+            .filter((msg) => msg.fromUserId !== user.id && msg.status !== "seen")
+            .map((msg) => msg.id);
+
+          sendSeenReceipt(unreadIncomingIds);
         }
       } catch (err) {
         console.error("Error fetching messages:", err);
@@ -461,7 +506,7 @@ const ChatWindow: FC<Props> = ({
     };
 
     loadMessages();
-  }, [conversationId, ws, conversationKey]);
+  }, [conversationId, conversationKey, user.id, ws]);
 
   const sendTextMessage = async (e?: FormEvent<HTMLFormElement>): Promise<void> => {
     if (e) e.preventDefault();
@@ -619,7 +664,7 @@ const ChatWindow: FC<Props> = ({
         <div className="chat-header-info">
           <h3>{selectedUser.username}</h3>
           <span className={`status-text ${selectedUser.online ? "online" : "offline"}`}>
-            {selectedUser.online ? "online" : "offline"}
+            {statusLabel}
           </span>
         </div>
       </div>

@@ -111,11 +111,16 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
       <div className="sidebar-header">
         <div className="profile-section">
           <div className="user-avatar">
-            {currentUser.avatar_url ? (
+            {typeof currentUser.avatar_url === "string" && currentUser.avatar_url.trim().length > 0 ? (
               <img
                 src={currentUser.avatar_url}
                 alt={currentUser.username}
                 className="avatar-img"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                  e.currentTarget.parentElement!.textContent =
+                    currentUser.username.charAt(0).toUpperCase();
+                }}
               />
             ) : (
               currentUser.username.charAt(0).toUpperCase()
