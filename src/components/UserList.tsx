@@ -8,6 +8,7 @@ interface User {
   email: string;
   online?: boolean;
   last_seen?: number;
+  avatar_url?: string | null;
 }
 
 interface IncomingBuddyRequest {
@@ -59,6 +60,7 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
   const [actingRequestId, setActingRequestId] = useState<string | null>(null);
   const [sendingRequestUserId, setSendingRequestUserId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const isSearchActive = searchQuery.trim().length > 0;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -108,8 +110,16 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
     <div className="sidebar">
       <div className="sidebar-header">
         <div className="profile-section">
-          <div className="profile-avatar">
-            {currentUser.username.charAt(0).toUpperCase()}
+          <div className="user-avatar">
+            {currentUser.avatar_url ? (
+              <img
+                src={currentUser.avatar_url}
+                alt={currentUser.username}
+                className="avatar-img"
+              />
+            ) : (
+              currentUser.username.charAt(0).toUpperCase()
+            )}
           </div>
           <div className="profile-info">
             <h3>{currentUser.username}</h3>
@@ -196,7 +206,7 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
         </div>
       )}
 
-      {searchQuery.trim().length > 0 && (
+      {isSearchActive && (
         <div className="buddy-search-results">
           <div className="section-title">Search Results</div>
           {searchingBuddies ? (
@@ -226,7 +236,7 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
         </div>
       )}
 
-      <div className="users-list">
+      <div className={`users-list ${isSearchActive ? "hidden-by-search" : ""}`}>
         {loading ? (
           <div className="loading-state">
             <div className="loading-spinner"></div>
@@ -242,7 +252,20 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
               onClick={() => onSelect(u)}
             >
               <div className="user-avatar">
-                {u.username.charAt(0).toUpperCase()}
+                {typeof u.avatar_url === "string" && u.avatar_url.trim().length > 0 ? (
+                  <img
+                    src={u.avatar_url}
+                    alt={u.username}
+                    className="avatar-img"
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                      e.currentTarget.parentElement!.textContent =
+                        u.username.charAt(0).toUpperCase();
+                    }}
+                  />
+                ) : (
+                  u.username.charAt(0).toUpperCase()
+                )}
               </div>
               <div className="user-info">
                 <div className="user-name">{u.username}</div>

@@ -81,11 +81,11 @@ const MessageBubble: FC<Props> = (props: Props): JSX.Element => {
           ) : (
             <div className="bubble-text">{message}</div>
           )}
+          <span className={`timestamp ${getStatusClass()}`}>
+            {formatTime(timestamp)}
+            {isOwn && <span className={`status-tick ${getStatusClass()}`}>{getStatusIcon()}</span>}
+          </span>
         </div>
-        <span className={`timestamp ${getStatusClass()}`}>
-          {formatTime(timestamp)}
-          {isOwn && <span className={`status-tick ${getStatusClass()}`}>{getStatusIcon()}</span>}
-        </span>
       </div>
     </div>
   );

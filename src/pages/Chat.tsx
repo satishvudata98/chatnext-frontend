@@ -76,6 +76,7 @@ const Chat: FC = (): JSX.Element | null => {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
+  const selectionRequestIdRef = useRef<number>(0);
   const maxReconnectAttempts = 5;
   const intentionalCloseRef = useRef<boolean>(false);
 
@@ -528,10 +529,18 @@ const Chat: FC = (): JSX.Element | null => {
       return;
     }
 
+    const requestId = selectionRequestIdRef.current + 1;
+    selectionRequestIdRef.current = requestId;
     setSelectedUser(selectedUserData);
+    setSelectedConversationId(null);
     setShowMobileChat(true);
+
     try {
       const data = await getOrCreateConversation(selectedUserData.id);
+      if (selectionRequestIdRef.current !== requestId) {
+        return;
+      }
+
       const typedData = data as { conversation: { id: string } };
       const conversationId = typedData.conversation.id;
       setSelectedConversationId(conversationId);
@@ -550,12 +559,18 @@ const Chat: FC = (): JSX.Element | null => {
         }));
       }
     } catch (err) {
+      if (selectionRequestIdRef.current !== requestId) {
+        return;
+      }
       console.error("Error getting conversation:", err);
       setError("Failed to load conversation");
+      setShowMobileChat(false);
+      setSelectedConversationId(null);
     }
   };
 
   const handleBackToList = (): void => {
+    selectionRequestIdRef.current += 1;
     setShowMobileChat(false);
   };
 
