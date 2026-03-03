@@ -19,8 +19,27 @@
   --color-success: #31a24c;
 }
 
-html {
+[data-theme="dark"] {
+  --color-primary: #128c7e;
+  --color-primary-dark: #25d366;
+  --color-bg: #181a20;
+  --color-white: #23272f;
+  --color-text: #f1f1f1;
+  --color-text-secondary: #b0b3b8;
+  --color-border: #33343a;
+  --color-sent: #263238;
+  --color-received: #23272f;
+  --color-sent-dark: #1e2a23;
+  --color-error: #f02e65;
+  --color-success: #31a24c;
+}
+
+
+html, body {
   font-size: 16px;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
 }
 
 body {

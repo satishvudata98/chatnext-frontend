@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import ThemeSwitcher from "./ThemeSwitcher";
 import type { FC, ChangeEvent, FormEvent } from "react";
 import { Search, LogOut, Menu } from "lucide-react";
 
@@ -136,7 +137,8 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
             </span>
           </div>
         </div>
-        <div className="header-actions">
+        <div className="header-actions" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <ThemeSwitcher />
           <button
             className="menu-btn"
             onClick={() => setShowMenu(!showMenu)}

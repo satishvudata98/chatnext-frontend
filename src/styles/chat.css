@@ -1,3 +1,4 @@
+
 :root {
   --wa-green: #25d366;
   --wa-green-dark: #128c7e;
@@ -12,6 +13,22 @@
   --wa-shadow: rgba(0, 0, 0, 0.08);
   --wa-message-in: #ffffff;
   --wa-message-out: #d9fdd3;
+}
+
+[data-theme="dark"] {
+  --wa-green: #128c7e;
+  --wa-green-dark: #25d366;
+  --wa-green-light: #263238;
+  --wa-blue: #1976d2;
+  --wa-gray-bg: #181a20;
+  --wa-gray-light: #23272f;
+  --wa-white: #23272f;
+  --wa-text: #f1f1f1;
+  --wa-text-secondary: #b0b3b8;
+  --wa-border: #33343a;
+  --wa-shadow: rgba(0, 0, 0, 0.32);
+  --wa-message-in: #23272f;
+  --wa-message-out: #263238;
 }
 
 * {
@@ -539,6 +556,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  background: var(--wa-gray-bg);
+  transition: background 0.2s;
 }
 
 .messages::-webkit-scrollbar {
@@ -659,7 +678,7 @@
   font-size: 14.2px;
   line-height: 19px;
   color: var(--wa-text);
-  padding-right: 50px;
+  padding-right: 72px;
 
   word-break: break-word;
   overflow-wrap: break-word;
