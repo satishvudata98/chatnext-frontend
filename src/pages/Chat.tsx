@@ -77,8 +77,30 @@ const Chat: FC = (): JSX.Element | null => {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
   const selectionRequestIdRef = useRef<number>(0);
+  const notificationPermissionRequestedRef = useRef<boolean>(false);
   const maxReconnectAttempts = 5;
   const intentionalCloseRef = useRef<boolean>(false);
+
+  const showIncomingMessageNotification = (payload: {
+    fromUserId?: string;
+    fromUsername?: string;
+    conversationId?: string;
+  }): void => {
+    if (!payload.fromUserId || payload.fromUserId === user?.id) return;
+    if (typeof document !== "undefined" && document.visibilityState === "visible") return;
+    if (typeof Notification === "undefined" || !globalThis.isSecureContext) return;
+    if (Notification.permission !== "granted") return;
+
+    const notification = new Notification(payload.fromUsername || "New message", {
+      body: "Sent you a message",
+      tag: payload.conversationId ? `message-${payload.conversationId}` : `message-${payload.fromUserId}`,
+    });
+
+    notification.onclick = () => {
+      globalThis.focus?.();
+      notification.close();
+    };
+  };
 
   const loadBuddyUsers = useCallback(async (): Promise<void> => {
     const data = await fetchUsers() as { users?: User[] };
@@ -305,6 +327,28 @@ const Chat: FC = (): JSX.Element | null => {
     })();
   }, [token, e2eeReady, loadBuddyData]);
 
+  useEffect(() => {
+    if (!token || !user || !e2eeReady) return;
+    if (typeof Notification === "undefined" || !globalThis.isSecureContext) return;
+    if (Notification.permission !== "default") return;
+
+    const requestPermission = (): void => {
+      if (notificationPermissionRequestedRef.current) return;
+      if (document.visibilityState !== "visible") return;
+      notificationPermissionRequestedRef.current = true;
+
+      Notification.requestPermission().catch((permissionError) => {
+        console.error("Notification permission request failed:", permissionError);
+      });
+    };
+
+    requestPermission();
+    document.addEventListener("visibilitychange", requestPermission);
+    return () => {
+      document.removeEventListener("visibilitychange", requestPermission);
+    };
+  }, [token, user, e2eeReady]);
+
   const handleSearchBuddyUsers = async (username: string): Promise<void> => {
     const trimmed = username.trim();
     if (!trimmed) {
@@ -424,6 +468,12 @@ const Chat: FC = (): JSX.Element | null => {
           }
 
           if (data.type === "message") {
+            showIncomingMessageNotification({
+              fromUserId: data.fromUserId,
+              fromUsername: data.fromUsername,
+              conversationId: data.conversationId,
+            });
+
             globalThis.dispatchEvent(
               new CustomEvent("websocket:message", { detail: data })
             );
