@@ -8,12 +8,13 @@ import "../styles/auth.css";
 
 const Register: FC = (): JSX.Element => {
   const navigate = useNavigate();
-  const { signupWithEmail } = useAuth();
+  const { signupWithEmail, loginWithGoogle } = useAuth();
 
   const [username, setUsername] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [confirmPassword, setConfirmPassword] = useState<string>("");
+  const [loadingGoogle, setLoadingGoogle] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
 
@@ -41,7 +42,6 @@ const Register: FC = (): JSX.Element => {
       await signupWithEmail(email.trim(), password, username.trim());
       sessionStorage.setItem("tempPassword", password);
 
-      // Keep the existing E2EE bootstrap flow unchanged.
       try {
         const keyPair = await generateUserKeyPair();
         await storeUserKeyPair(keyPair);
@@ -56,6 +56,20 @@ const Register: FC = (): JSX.Element => {
       setError(err instanceof Error ? err.message : "Unable to create account");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async (): Promise<void> => {
+    setError("");
+    setLoadingGoogle(true);
+    try {
+      sessionStorage.removeItem("tempPassword");
+      await loginWithGoogle();
+      navigate("/chat");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed");
+    } finally {
+      setLoadingGoogle(false);
     }
   };
 
@@ -74,7 +88,7 @@ const Register: FC = (): JSX.Element => {
               placeholder="Display name"
               value={username}
               onChange={(e: ChangeEvent<HTMLInputElement>): void => setUsername(e.target.value)}
-              disabled={loading}
+              disabled={loading || loadingGoogle}
             />
           </div>
 
@@ -84,7 +98,7 @@ const Register: FC = (): JSX.Element => {
               placeholder="Email"
               value={email}
               onChange={(e: ChangeEvent<HTMLInputElement>): void => setEmail(e.target.value)}
-              disabled={loading}
+              disabled={loading || loadingGoogle}
             />
           </div>
 
@@ -94,7 +108,7 @@ const Register: FC = (): JSX.Element => {
               placeholder="Password"
               value={password}
               onChange={(e: ChangeEvent<HTMLInputElement>): void => setPassword(e.target.value)}
-              disabled={loading}
+              disabled={loading || loadingGoogle}
             />
           </div>
 
@@ -104,16 +118,24 @@ const Register: FC = (): JSX.Element => {
               placeholder="Confirm Password"
               value={confirmPassword}
               onChange={(e: ChangeEvent<HTMLInputElement>): void => setConfirmPassword(e.target.value)}
-              disabled={loading}
+              disabled={loading || loadingGoogle}
             />
           </div>
 
           {error && <div className="error-message">{error}</div>}
 
-          <button type="submit" disabled={loading} className="auth-button">
+          <button type="submit" disabled={loading || loadingGoogle} className="auth-button">
             {loading ? "Creating account..." : "Sign Up with Email"}
           </button>
         </form>
+        <button
+          type="button"
+          disabled={loading || loadingGoogle}
+          onClick={handleGoogleLogin}
+          className="auth-button secondary google-button"
+        >
+          {loadingGoogle ? "Connecting..." : "Signup with Google"}
+        </button>
 
         <div className="auth-footer">
           <p>
