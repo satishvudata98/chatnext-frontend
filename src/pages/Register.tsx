@@ -4,6 +4,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { storeEncryptedPrivateKey } from "../api/api";
 import { encryptPrivateKeyWithPassword, generateUserKeyPair, storeUserKeyPair } from "../utils/crypto";
 import { useAuth } from "../context/AuthContext";
+import ThemeSwitcher from "../components/ThemeSwitcher";
 import "../styles/auth.css";
 
 const Register: FC = (): JSX.Element => {
@@ -76,6 +77,9 @@ const Register: FC = (): JSX.Element => {
   return (
     <div className="auth-container">
       <div className="auth-card">
+        <div className="auth-theme-row">
+          <ThemeSwitcher />
+        </div>
         <div className="auth-header">
           <h2>Create Account</h2>
           <p>Sign up with Firebase Email Authentication</p>

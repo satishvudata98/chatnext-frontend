@@ -480,7 +480,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #efeae2;
+  background: var(--wa-gray-bg);
 }
 
 /* Chat Header */
@@ -836,7 +836,8 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  background: #efeae2;
+  background: var(--wa-gray-bg);
+  color: var(--wa-text-secondary);
 }
 
 .no-users {
