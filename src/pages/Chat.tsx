@@ -14,6 +14,7 @@ import {
   sendBuddyRequest,
   fetchIncomingBuddyRequests,
   respondToBuddyRequest,
+  fetchUnreadCounts,
 } from "../api/api";
 import {
   initializeE2EE,
@@ -124,9 +125,23 @@ const Chat: FC = (): JSX.Element | null => {
     setIncomingBuddyRequests(data.incomingRequests || []);
   }, []);
 
+  const loadUnreadCounts = useCallback(async (): Promise<void> => {
+    const data = await fetchUnreadCounts() as { counts?: Record<string, number> };
+    const incomingCounts = data.counts || {};
+    const nextMap = new Map<string, number>();
+
+    Object.entries(incomingCounts).forEach(([senderId, count]) => {
+      if (count > 0) {
+        nextMap.set(senderId, count);
+      }
+    });
+
+    setUnreadCounts(nextMap);
+  }, []);
+
   const loadBuddyData = useCallback(async (): Promise<void> => {
-    await Promise.all([loadBuddyUsers(), loadIncomingBuddyRequests()]);
-  }, [loadBuddyUsers, loadIncomingBuddyRequests]);
+    await Promise.all([loadBuddyUsers(), loadIncomingBuddyRequests(), loadUnreadCounts()]);
+  }, [loadBuddyUsers, loadIncomingBuddyRequests, loadUnreadCounts]);
 
   const syncPublicKeyToServer = async (): Promise<void> => {
     const publicKey = await getUserPublicKey();
