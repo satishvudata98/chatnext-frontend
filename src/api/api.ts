@@ -73,6 +73,10 @@ export async function fetchIncomingBuddyRequests() {
   return apiRequest("/api/buddy-requests", "GET");
 }
 
+export async function fetchUnreadCounts() {
+  return apiRequest("/api/unread-counts", "GET");
+}
+
 export async function respondToBuddyRequest(requestId: string, action: "accept" | "reject") {
   return apiRequest("/api/buddy-requests/respond", "POST", { requestId, action });
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FC, ChangeEvent, FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import ThemeSwitcher from "../components/ThemeSwitcher";
 import "../styles/auth.css";
 
 const Login: FC = (): JSX.Element => {
@@ -52,6 +53,9 @@ const Login: FC = (): JSX.Element => {
   return (
     <div className="auth-container">
       <div className="auth-card">
+        <div className="auth-theme-row">
+          <ThemeSwitcher />
+        </div>
         <div className="auth-header">
           <h2>Welcome Back</h2>
           <p>Sign in with Firebase to continue chatting</p>
