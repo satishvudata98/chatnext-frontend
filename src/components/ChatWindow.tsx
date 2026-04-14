@@ -142,6 +142,7 @@ const ChatWindow: FC<Props> = ({
   const [conversationKey, setConversationKey] = useState<CryptoKey | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [composerError, setComposerError] = useState("");
+  const [offlineQueue, setOfflineQueue] = useState<string[]>([]);
 
   const conversationKeyRef = useRef<CryptoKey | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -163,9 +164,35 @@ const ChatWindow: FC<Props> = ({
 
   useEffect(() => {
     setComposerError("");
+    setOfflineQueue([]);
     mediaUrlCacheRef.current.forEach((url) => URL.revokeObjectURL(url));
     mediaUrlCacheRef.current.clear();
   }, [conversationId]);
+
+  useEffect(() => {
+    if (!ws) return;
+
+    const flushQueue = () => {
+      if (ws.readyState === WebSocket.OPEN && offlineQueue.length > 0) {
+        const queueToFlush = [...offlineQueue];
+        setOfflineQueue([]);
+        queueToFlush.forEach(payload => {
+          try {
+            ws.send(payload);
+          } catch (e) {
+            console.error("Queue flush error", e);
+          }
+        });
+      }
+    };
+
+    if (ws.readyState === WebSocket.OPEN) {
+      flushQueue();
+    } else {
+      ws.addEventListener("open", flushQueue);
+      return () => ws.removeEventListener("open", flushQueue);
+    }
+  }, [ws, offlineQueue]);
 
   const scrollToBottom = (): void => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -335,6 +362,7 @@ const ChatWindow: FC<Props> = ({
         type: string;
         conversationId: string;
         id: string;
+        clientMessageId?: string;
         fromUserId: string;
         fromUsername: string;
         encryptedMessage: unknown;
@@ -377,10 +405,9 @@ const ChatWindow: FC<Props> = ({
           const updatedMessages = prev.map((m) => {
             if (
               m.id.startsWith("temp-") &&
-              m.fromUserId === data.fromUserId &&
-              m.fromUserId === user.id &&
-              !replaced &&
-              Math.abs(m.createdAt - data.createdAt) < 10
+              data.clientMessageId &&
+              m.id === data.clientMessageId &&
+              !replaced
             ) {
               replaced = true;
               return builtMessage;
@@ -405,6 +432,7 @@ const ChatWindow: FC<Props> = ({
     const handleMessageDelivered = (event: Event): void => {
       const customEvent = event as CustomEvent<{
         messageId: string;
+        clientMessageId?: string;
         conversationId: string;
       }>;
       const data = customEvent.detail;
@@ -412,7 +440,9 @@ const ChatWindow: FC<Props> = ({
       if (data.conversationId === conversationId) {
         setMessages((prev: Message[]): Message[] =>
           prev.map((msg: Message): Message =>
-            msg.id === data.messageId ? { ...msg, status: "delivered" } : msg,
+            (msg.id === data.messageId || (data.clientMessageId && msg.id === data.clientMessageId))
+              ? { ...msg, id: data.messageId, status: "delivered" }
+              : msg,
           ),
         );
       }
@@ -511,14 +541,10 @@ const ChatWindow: FC<Props> = ({
   const sendTextMessage = async (e?: FormEvent<HTMLFormElement>): Promise<void> => {
     if (e) e.preventDefault();
     if (!input.trim() || !selectedUser || !conversationKey) return;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      setComposerError("Connection lost. Reconnect and try again.");
-      return;
-    }
 
     const messageToSend = input.trim();
     const now = Math.floor(Date.now() / 1000);
-    const tempId = `temp-${Date.now()}`;
+    const tempId = `temp-${crypto.randomUUID()}`;
 
     let encryptedMessage;
     try {
@@ -543,17 +569,23 @@ const ChatWindow: FC<Props> = ({
     setInput("");
     setComposerError("");
 
-    try {
-      ws.send(JSON.stringify({
-        type: "message",
-        conversationId,
-        toUserId: selectedUser.id,
-        encryptedMessage,
-      }));
-    } catch (error) {
-      console.error("Error sending message:", error);
-      setMessages((prev: Message[]): Message[] => prev.filter((m) => m.id !== tempId));
-      setInput(messageToSend);
+    const payload = JSON.stringify({
+      type: "message",
+      clientMessageId: tempId,
+      conversationId,
+      toUserId: selectedUser.id,
+      encryptedMessage,
+    });
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(payload);
+      } catch (error) {
+        console.error("Error sending message:", error);
+        setOfflineQueue((prev) => [...prev, payload]);
+      }
+    } else {
+      setOfflineQueue((prev) => [...prev, payload]);
     }
   };
 
@@ -561,10 +593,6 @@ const ChatWindow: FC<Props> = ({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file || !conversationKey || !selectedUser) return;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      setComposerError("Connection lost. Reconnect and try again.");
-      return;
-    }
 
     if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
       setComposerError("Only JPG, JPEG, or PNG files are allowed.");
@@ -577,7 +605,7 @@ const ChatWindow: FC<Props> = ({
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const tempId = `temp-${Date.now()}`;
+    const tempId = `temp-${crypto.randomUUID()}`;
     const localPreviewUrl = URL.createObjectURL(file);
     setUploadingImage(true);
     setComposerError("");
@@ -628,16 +656,28 @@ const ChatWindow: FC<Props> = ({
 
       setMessages((prev: Message[]): Message[] => [...prev, optimisticImageMessage]);
 
-      ws.send(JSON.stringify({
+      const payload = JSON.stringify({
         type: "message",
+        clientMessageId: tempId,
         conversationId,
         toUserId: selectedUser.id,
         encryptedMessage,
-      }));
+      });
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(payload);
+        } catch (error) {
+          console.error("Error sending image message:", error);
+          setOfflineQueue((prev) => [...prev, payload]);
+        }
+      } else {
+        setOfflineQueue((prev) => [...prev, payload]);
+      }
     } catch (error) {
       URL.revokeObjectURL(localPreviewUrl);
       setMessages((prev: Message[]): Message[] => prev.filter((m) => m.id !== tempId));
-      console.error("Failed to send encrypted image:", error);
+      console.error("Failed to process encrypted image:", error);
       setComposerError("Failed to send encrypted image.");
     } finally {
       setUploadingImage(false);

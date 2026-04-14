@@ -650,6 +650,8 @@ const Chat: FC = (): JSX.Element | null => {
   const handleBackToList = (): void => {
     selectionRequestIdRef.current += 1;
     setShowMobileChat(false);
+    setSelectedUser(null);
+    setSelectedConversationId(null);
   };
 
   const handleLogout = async (): Promise<void> => {
@@ -734,9 +736,9 @@ const Chat: FC = (): JSX.Element | null => {
             <p>Preparing end-to-end encryption...</p>
           </div>
         ) : connectionStatus === "connected" &&
-        selectedUser &&
-        selectedConversationId &&
-        websocket ? (
+          selectedUser &&
+          selectedConversationId &&
+          websocket ? (
           <ChatWindow
             user={user}
             selectedUser={selectedUser}
