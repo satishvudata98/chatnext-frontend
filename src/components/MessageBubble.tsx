@@ -84,17 +84,17 @@ const MessageBubble: FC<Props> = (props: Props): JSX.Element => {
 
   const hasActions = canReply || canEdit;
 
-  const getStatusIcon = (): string => {
+  const getStatusLabel = (): string => {
     if (!isOwn) return "";
     switch (status) {
       case "seen":
-        return "✓✓";
+        return "Opened";
       case "delivered":
-        return "✓✓";
+        return "Delivered";
       case "sent":
-        return "✓";
+        return "Sent";
       default:
-        return "✓";
+        return "Sent";
     }
   };
 
@@ -167,7 +167,7 @@ const MessageBubble: FC<Props> = (props: Props): JSX.Element => {
             <span className={`timestamp ${getStatusClass()}`}>
               {isEdited && <span className="edited-indicator">edited</span>}
               {formatTime(timestamp)}
-              {isOwn && <span className={`status-tick ${getStatusClass()}`}>{getStatusIcon()}</span>}
+              {isOwn && <span className={`status-label ${getStatusClass()}`}>{getStatusLabel()}</span>}
             </span>
           </div>
           {isOwn && actions}

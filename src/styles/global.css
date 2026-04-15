@@ -5,33 +5,43 @@
 }
 
 :root {
-  --color-primary: #25d366;
-  --color-primary-dark: #128c7e;
-  --color-bg: #f0f2f5;
+  --color-primary: #149f97;
+  --color-primary-dark: #087d7b;
+  --color-secondary: #e85d75;
+  --color-accent: #4f8cff;
+  --color-primary-gradient: linear-gradient(135deg, #149f97 0%, #4f8cff 100%);
+  --color-secondary-gradient: linear-gradient(135deg, #e85d75 0%, #149f97 100%);
+  --color-bg: #f5f8fb;
   --color-white: #ffffff;
-  --color-text: #111;
-  --color-text-secondary: #65676b;
-  --color-border: #e5e5ea;
-  --color-sent: #dcf8c6;
-  --color-received: #ffffff;
-  --color-sent-dark: #a8daa8;
+  --color-surface-soft: #eef4f7;
+  --color-text: #172026;
+  --color-text-secondary: #66737a;
+  --color-border: #dbe5ea;
+  --color-sent: #149f97;
+  --color-received: #eef4f7;
+  --color-sent-dark: #087d7b;
   --color-error: #f02e65;
-  --color-success: #31a24c;
+  --color-success: #149f97;
 }
 
 [data-theme="dark"] {
-  --color-primary: #128c7e;
-  --color-primary-dark: #25d366;
-  --color-bg: #181a20;
-  --color-white: #23272f;
-  --color-text: #f1f1f1;
-  --color-text-secondary: #b0b3b8;
-  --color-border: #33343a;
-  --color-sent: #263238;
-  --color-received: #23272f;
-  --color-sent-dark: #1e2a23;
+  --color-primary: #25c7b8;
+  --color-primary-dark: #6aa3ff;
+  --color-secondary: #ff6f91;
+  --color-accent: #6aa3ff;
+  --color-primary-gradient: linear-gradient(135deg, #25c7b8 0%, #6aa3ff 100%);
+  --color-secondary-gradient: linear-gradient(135deg, #ff6f91 0%, #25c7b8 100%);
+  --color-bg: #111516;
+  --color-white: #1b2022;
+  --color-surface-soft: #242b2e;
+  --color-text: #f4f7f7;
+  --color-text-secondary: #aeb9ba;
+  --color-border: #343d40;
+  --color-sent: #149f97;
+  --color-received: #242b2e;
+  --color-sent-dark: #0f7774;
   --color-error: #f02e65;
-  --color-success: #31a24c;
+  --color-success: #25c7b8;
 }
 
 
@@ -94,10 +104,10 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #ccc;
+  background: rgba(20, 159, 151, 0.35);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #999;
+  background: rgba(79, 140, 255, 0.5);
 }

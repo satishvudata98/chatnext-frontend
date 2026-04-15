@@ -3,15 +3,20 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  background:
+    radial-gradient(circle at 18% 20%, rgba(232, 93, 117, 0.22), transparent 28%),
+    radial-gradient(circle at 82% 14%, rgba(79, 140, 255, 0.24), transparent 30%),
+    linear-gradient(135deg, #edf7f5 0%, #f7f9fd 48%, #eef4ff 100%);
   padding: 20px;
 }
 
 .auth-card,
 .home-card {
-  background: var(--color-white);
+  background: rgba(255, 255, 255, 0.88);
   border-radius: 16px;
-  box-shadow: 0 10px 50px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  box-shadow: 0 24px 70px rgba(23, 32, 38, 0.16);
+  backdrop-filter: blur(18px);
   padding: 40px;
   width: 100%;
   max-width: 420px;
@@ -70,7 +75,7 @@
 
 .form-group input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.1);
+  box-shadow: 0 0 0 3px rgba(20, 159, 151, 0.13);
 }
 
 .form-group input:disabled {
@@ -97,7 +102,7 @@
   border: none;
   cursor: pointer;
   width: 100%;
-  background: linear-gradient(135deg, #25d366 0%, #20b85c 100%);
+  background: var(--color-primary-gradient);
   color: white;
   transition: all 0.3s ease;
   text-transform: uppercase;
@@ -110,13 +115,13 @@
 }
 
 .auth-button.primary {
-  background: linear-gradient(135deg, #25d366 0%, #20b85c 100%);
+  background: var(--color-primary-gradient);
   color: white;
 }
 
 .auth-button.primary:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(37, 211, 102, 0.3);
+  box-shadow: 0 12px 26px rgba(20, 159, 151, 0.28);
 }
 
 .auth-button.primary:active:not(:disabled) {
@@ -130,7 +135,7 @@
 }
 
 .auth-button.secondary:hover:not(:disabled) {
-  background: rgba(37, 211, 102, 0.05);
+  background: rgba(20, 159, 151, 0.08);
 }
 
 .google-button {
@@ -159,17 +164,21 @@
 }
 
 [data-theme="dark"] .auth-container {
-  background: linear-gradient(135deg, #0f1720 0%, #1b2a24 100%);
+  background:
+    radial-gradient(circle at 16% 20%, rgba(255, 111, 145, 0.14), transparent 28%),
+    radial-gradient(circle at 84% 12%, rgba(106, 163, 255, 0.16), transparent 30%),
+    linear-gradient(135deg, #101415 0%, #171d1f 52%, #141a1f 100%);
 }
 
 [data-theme="dark"] .auth-card,
 [data-theme="dark"] .home-card {
   border: 1px solid var(--color-border);
+  background: rgba(27, 32, 34, 0.86);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
 }
 
 [data-theme="dark"] .auth-button.secondary:hover:not(:disabled) {
-  background: rgba(37, 211, 102, 0.12);
+  background: rgba(37, 199, 184, 0.12);
 }
 
 /* Home Page Styles */

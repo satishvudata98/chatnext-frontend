@@ -130,10 +130,10 @@ const UserList: FC<Props> = (props: Props): JSX.Element => {
           <div className="profile-info">
             <h3>{currentUser.username}</h3>
             <span className={`status-badge status-${connectionStatus}`}>
-              {connectionStatus === "connected" && "● Online"}
-              {connectionStatus === "disconnected" && "● Offline"}
-              {connectionStatus === "connecting" && "● Connecting..."}
-              {connectionStatus === "reconnecting" && "● Reconnecting..."}
+              {connectionStatus === "connected" && "Online"}
+              {connectionStatus === "disconnected" && "Offline"}
+              {connectionStatus === "connecting" && "Connecting..."}
+              {connectionStatus === "reconnecting" && "Reconnecting..."}
             </span>
           </div>
         </div>

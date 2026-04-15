@@ -5,7 +5,7 @@
   align-items: center;
   justify-content: center;
   gap: 14px;
-  background: var(--color-bg, #f7faf9);
+  background: var(--color-bg, #f5f8fb);
   color: var(--color-text, #1f2937);
 }
 
@@ -13,8 +13,8 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: 3px solid var(--color-border, #b7e7ce);
-  border-top-color: var(--color-primary, #25d366);
+  border: 3px solid var(--color-border, #dbe5ea);
+  border-top-color: var(--color-primary, #149f97);
   animation: appLoaderSpin 0.8s linear infinite;
 }
 
