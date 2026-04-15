@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import type { FC, ChangeEvent, FormEvent } from "react";
-import { ArrowLeft, ImagePlus, Send } from "lucide-react";
+import type { ChangeEvent, ComponentPropsWithoutRef, FC } from "react";
+import { ArrowLeft, ImagePlus, Pencil, Reply, Send, X } from "lucide-react";
 import {
   fetchMediaDownloadUrl,
   fetchMessages,
@@ -16,6 +16,17 @@ import {
   loadConversationKeyForDecryption,
 } from "../utils/crypto";
 import MessageBubble from "./MessageBubble";
+import {
+  buildImageMessagePayload,
+  buildReplyPreviewPayload,
+  buildTextMessagePayload,
+  parseDecryptedMessagePayload,
+} from "../utils/messagePayload";
+import type {
+  ImageMessagePayload,
+  MessageContentType,
+  ReplyPreviewPayload,
+} from "../utils/messagePayload";
 
 interface User {
   id: string;
@@ -25,28 +36,72 @@ interface User {
   last_seen?: number;
 }
 
-interface ImageMessagePayload {
-  type: "image";
-  mediaId: string;
-  mediaKey: string;
-  mediaIv: string;
-  mimeType: string;
-  fileName?: string;
-}
-
 interface Message {
   id: string;
   conversationId: string;
   fromUserId: string;
   fromUsername: string;
   message: string;
-  contentType: "text" | "image";
+  contentType: MessageContentType;
   imageUrl?: string;
   imageFileName?: string;
   encryptedMessage?: unknown;
   isRead: boolean;
   createdAt: number;
   status?: string;
+  replyToMessageId?: string | null;
+  replyPreview?: ReplyPreviewPayload | null;
+  editedAt?: number | null;
+  editVersion?: number;
+}
+
+interface MessageHistoryRow {
+  id: string;
+  conversation_id: string;
+  from_user_id: string;
+  content_type?: MessageContentType | null;
+  reply_to_message_id?: string | null;
+  encrypted_message?: unknown;
+  created_at: number;
+  edited_at?: number | null;
+  edit_version?: number | null;
+  status?: string;
+  delivered_at?: number | null;
+  seen_at?: number | null;
+  users?: {
+    username?: string | null;
+  } | null;
+}
+
+interface MessagesResponse {
+  success: boolean;
+  messages: MessageHistoryRow[];
+}
+
+interface MessageEventDetail {
+  type: "message";
+  conversationId: string;
+  id: string;
+  clientMessageId?: string;
+  fromUserId: string;
+  fromUsername: string;
+  encryptedMessage: unknown;
+  contentType?: MessageContentType;
+  replyToMessageId?: string | null;
+  createdAt: number;
+  editedAt?: number | null;
+  editVersion?: number;
+  status?: string;
+}
+
+interface MessageEditedEventDetail {
+  id: string;
+  conversationId: string;
+  encryptedMessage: unknown;
+  contentType?: MessageContentType;
+  replyToMessageId?: string | null;
+  editedAt?: number | null;
+  editVersion?: number;
 }
 
 interface Props {
@@ -60,6 +115,7 @@ interface Props {
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png"]);
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MESSAGE_EDIT_WINDOW_SECONDS = 15 * 60;
 
 function getDayKey(unixTimestamp: number): string {
   const date = new Date(unixTimestamp * 1000);
@@ -94,39 +150,11 @@ function formatDayLabel(unixTimestamp: number): string {
   });
 }
 
-function parseDecryptedPayload(rawMessage: string):
-  | { contentType: "text"; text: string }
-  | { contentType: "image"; text: string; imagePayload: ImageMessagePayload } {
-  try {
-    const parsed = JSON.parse(rawMessage) as Partial<ImageMessagePayload> & { type?: string };
-    if (
-      parsed.type === "image" &&
-      parsed.mediaId &&
-      parsed.mediaKey &&
-      parsed.mediaIv &&
-      parsed.mimeType
-    ) {
-      return {
-        contentType: "image",
-        text: "[Image]",
-        imagePayload: {
-          type: "image",
-          mediaId: parsed.mediaId,
-          mediaKey: parsed.mediaKey,
-          mediaIv: parsed.mediaIv,
-          mimeType: parsed.mimeType,
-          fileName: parsed.fileName || "image",
-        },
-      };
-    }
-  } catch {
-    // Not a structured image payload; keep as text for backward compatibility.
-  }
-
-  return {
-    contentType: "text",
-    text: rawMessage,
-  };
+function isMessageEditable(message: Message, userId: string): boolean {
+  if (message.fromUserId !== userId) return false;
+  if (message.id.startsWith("temp-")) return false;
+  if (message.contentType !== "text") return false;
+  return Math.floor(Date.now() / 1000) - message.createdAt <= MESSAGE_EDIT_WINDOW_SECONDS;
 }
 
 const ChatWindow: FC<Props> = ({
@@ -143,8 +171,12 @@ const ChatWindow: FC<Props> = ({
   const [uploadingImage, setUploadingImage] = useState(false);
   const [composerError, setComposerError] = useState("");
   const [offlineQueue, setOfflineQueue] = useState<string[]>([]);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [activeActionMessageId, setActiveActionMessageId] = useState<string | null>(null);
 
   const conversationKeyRef = useRef<CryptoKey | null>(null);
+  const messagesRef = useRef<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -156,6 +188,10 @@ const ChatWindow: FC<Props> = ({
   }, [conversationKey]);
 
   useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
     return () => {
       mediaUrlCacheRef.current.forEach((url) => URL.revokeObjectURL(url));
       mediaUrlCacheRef.current.clear();
@@ -165,9 +201,57 @@ const ChatWindow: FC<Props> = ({
   useEffect(() => {
     setComposerError("");
     setOfflineQueue([]);
+    setReplyingTo(null);
+    setEditingMessage(null);
+    setActiveActionMessageId(null);
+    setInput("");
     mediaUrlCacheRef.current.forEach((url) => URL.revokeObjectURL(url));
     mediaUrlCacheRef.current.clear();
   }, [conversationId]);
+
+  useEffect(() => {
+    if (!replyingTo && !editingMessage) return;
+
+    const frameId = globalThis.requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      const inputElement = inputRef.current;
+      if (inputElement) {
+        const textLength = inputElement.value.length;
+        inputElement.setSelectionRange(textLength, textLength);
+      }
+    });
+
+    return () => {
+      globalThis.cancelAnimationFrame(frameId);
+    };
+  }, [replyingTo, editingMessage]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent): void => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".message-actions")) return;
+      setActiveActionMessageId(null);
+    };
+
+    globalThis.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      globalThis.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
+
+  useEffect(() => {
+    const messageList = messageListRef.current;
+    if (!messageList) return;
+
+    const handleScroll = (): void => {
+      setActiveActionMessageId(null);
+    };
+
+    messageList.addEventListener("scroll", handleScroll);
+    return () => {
+      messageList.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
 
   useEffect(() => {
     if (!ws) return;
@@ -285,9 +369,12 @@ const ChatWindow: FC<Props> = ({
     encryptedMessage?: unknown;
     createdAt: number;
     status?: string;
+    editedAt?: number | null;
+    editVersion?: number;
+    replyToMessageId?: string | null;
     decryptedMessage: string;
   }): Promise<Message> => {
-    const parsedPayload = parseDecryptedPayload(payload.decryptedMessage);
+    const parsedPayload = parseDecryptedMessagePayload(payload.decryptedMessage);
     if (parsedPayload.contentType === "image") {
       let imageUrl: string | undefined;
       try {
@@ -308,6 +395,10 @@ const ChatWindow: FC<Props> = ({
         encryptedMessage: payload.encryptedMessage,
         isRead: false,
         createdAt: payload.createdAt,
+        replyToMessageId: payload.replyToMessageId ?? parsedPayload.replyPreview?.messageId ?? null,
+        replyPreview: parsedPayload.replyPreview,
+        editedAt: payload.editedAt ?? null,
+        editVersion: payload.editVersion || 0,
         status: payload.status || "sent",
       };
     }
@@ -322,8 +413,35 @@ const ChatWindow: FC<Props> = ({
       encryptedMessage: payload.encryptedMessage,
       isRead: false,
       createdAt: payload.createdAt,
+      replyToMessageId: payload.replyToMessageId ?? parsedPayload.replyPreview?.messageId ?? null,
+      replyPreview: parsedPayload.replyPreview,
+      editedAt: payload.editedAt ?? null,
+      editVersion: payload.editVersion || 0,
       status: payload.status || "sent",
     };
+  };
+
+  const openReplyComposer = (message: Message): void => {
+    if (message.id.startsWith("temp-")) return;
+
+    setEditingMessage(null);
+    setReplyingTo(message);
+    setActiveActionMessageId(null);
+  };
+
+  const openEditComposer = (message: Message): void => {
+    if (!isMessageEditable(message, user.id)) return;
+
+    setReplyingTo(null);
+    setEditingMessage(message);
+    setInput(message.message);
+    setActiveActionMessageId(null);
+  };
+
+  const clearComposerContext = (): void => {
+    setReplyingTo(null);
+    setEditingMessage(null);
+    setComposerError("");
   };
 
   useEffect(() => {
@@ -358,17 +476,7 @@ const ChatWindow: FC<Props> = ({
 
   useEffect(() => {
     const handleWebSocketMessage = async (event: Event): Promise<void> => {
-      const customEvent = event as CustomEvent<{
-        type: string;
-        conversationId: string;
-        id: string;
-        clientMessageId?: string;
-        fromUserId: string;
-        fromUsername: string;
-        encryptedMessage: unknown;
-        createdAt: number;
-        status?: string;
-      }>;
+      const customEvent = event as CustomEvent<MessageEventDetail>;
       const data = customEvent.detail;
 
       if (data.type === "message" && data.conversationId === conversationId) {
@@ -396,6 +504,9 @@ const ChatWindow: FC<Props> = ({
           fromUsername: data.fromUsername,
           encryptedMessage: data.encryptedMessage,
           createdAt: data.createdAt,
+          editedAt: data.editedAt,
+          editVersion: data.editVersion,
+          replyToMessageId: data.replyToMessageId,
           status: data.status,
           decryptedMessage,
         });
@@ -426,6 +537,54 @@ const ChatWindow: FC<Props> = ({
         if (data.fromUserId !== user.id) {
           sendSeenReceipt([data.id]);
         }
+      }
+    };
+
+    const handleMessageEdited = async (event: Event): Promise<void> => {
+      const customEvent = event as CustomEvent<MessageEditedEventDetail>;
+      const data = customEvent.detail;
+
+      if (data.conversationId !== conversationId) return;
+
+      const existingMessage = messagesRef.current.find((message) => message.id === data.id);
+      if (!existingMessage || !conversationKeyRef.current || !data.encryptedMessage) {
+        return;
+      }
+
+      let decryptedMessage = "[Failed to decrypt]";
+      try {
+        decryptedMessage = await decryptMessage(data.encryptedMessage as never, conversationKeyRef.current);
+      } catch (error) {
+        console.error("Failed to decrypt edited message:", error);
+      }
+
+      const updatedMessage = await buildMessageFromDecrypted({
+        id: existingMessage.id,
+        conversationId: existingMessage.conversationId,
+        fromUserId: existingMessage.fromUserId,
+        fromUsername: existingMessage.fromUsername,
+        encryptedMessage: data.encryptedMessage,
+        createdAt: existingMessage.createdAt,
+        editedAt: data.editedAt,
+        editVersion: data.editVersion,
+        replyToMessageId: data.replyToMessageId ?? existingMessage.replyToMessageId ?? null,
+        status: existingMessage.status,
+        decryptedMessage,
+      });
+
+      setMessages((prevMessages): Message[] =>
+        prevMessages.map((message) => (
+          message.id === data.id
+            ? {
+                ...updatedMessage,
+                status: message.status,
+              }
+            : message
+        )),
+      );
+
+      if (editingMessage?.id === data.id) {
+        setEditingMessage(updatedMessage);
       }
     };
 
@@ -474,13 +633,15 @@ const ChatWindow: FC<Props> = ({
     globalThis.addEventListener("websocket:message", handleWebSocketMessage);
     globalThis.addEventListener("websocket:message_delivered", handleMessageDelivered);
     globalThis.addEventListener("websocket:message_seen", handleMessageSeen);
+    globalThis.addEventListener("websocket:message_edited", handleMessageEdited);
 
     return (): void => {
       globalThis.removeEventListener("websocket:message", handleWebSocketMessage);
       globalThis.removeEventListener("websocket:message_delivered", handleMessageDelivered);
       globalThis.removeEventListener("websocket:message_seen", handleMessageSeen);
+      globalThis.removeEventListener("websocket:message_edited", handleMessageEdited);
     };
-  }, [conversationId, user.id, ws]);
+  }, [conversationId, editingMessage, user.id, ws]);
 
   useEffect(() => {
     const loadMessages = async (): Promise<void> => {
@@ -489,10 +650,10 @@ const ChatWindow: FC<Props> = ({
       setLoading(true);
       try {
         const data = await fetchMessages(conversationId);
-        const typedData = data as { success: boolean; messages: any[] };
+        const typedData = data as MessagesResponse;
         if (typedData.success && typedData.messages) {
           const transformedMessages = await Promise.all(
-            typedData.messages.map(async (msg: any): Promise<Message> => {
+            typedData.messages.map(async (msg): Promise<Message> => {
               let decryptedMessage = "[Encrypted message]";
               if (msg.encrypted_message) {
                 try {
@@ -513,6 +674,9 @@ const ChatWindow: FC<Props> = ({
                 fromUsername: msg.users?.username || "Unknown",
                 encryptedMessage: msg.encrypted_message,
                 createdAt: msg.created_at,
+                editedAt: msg.edited_at,
+                editVersion: msg.edit_version || 0,
+                replyToMessageId: msg.reply_to_message_id ?? null,
                 status: msg.status || "sent",
                 decryptedMessage,
               });
@@ -538,17 +702,26 @@ const ChatWindow: FC<Props> = ({
     loadMessages();
   }, [conversationId, conversationKey, user.id, ws]);
 
-  const sendTextMessage = async (e?: FormEvent<HTMLFormElement>): Promise<void> => {
-    if (e) e.preventDefault();
+  const buildReplyContext = (): ReplyPreviewPayload | null => {
+    if (!replyingTo) return null;
+    return buildReplyPreviewPayload(replyingTo);
+  };
+
+  const sendTextMessage = async (): Promise<void> => {
     if (!input.trim() || !selectedUser || !conversationKey) return;
 
     const messageToSend = input.trim();
     const now = Math.floor(Date.now() / 1000);
     const tempId = `temp-${crypto.randomUUID()}`;
+    const replyPreview = buildReplyContext();
 
     let encryptedMessage;
     try {
-      encryptedMessage = await encryptMessage(messageToSend, conversationKey, conversationId);
+      encryptedMessage = await encryptMessage(
+        buildTextMessagePayload(messageToSend, replyPreview),
+        conversationKey,
+        conversationId,
+      );
     } catch (error) {
       console.error("Failed to encrypt message:", error);
       return;
@@ -563,17 +736,24 @@ const ChatWindow: FC<Props> = ({
       contentType: "text",
       isRead: false,
       createdAt: now,
+      replyToMessageId: replyingTo?.id ?? null,
+      replyPreview,
+      editedAt: null,
+      editVersion: 0,
     };
 
     setMessages((prev: Message[]): Message[] => [...prev, optimisticMessage]);
     setInput("");
     setComposerError("");
+    setReplyingTo(null);
 
     const payload = JSON.stringify({
       type: "message",
       clientMessageId: tempId,
       conversationId,
       toUserId: selectedUser.id,
+      contentType: "text",
+      replyToMessageId: optimisticMessage.replyToMessageId,
       encryptedMessage,
     });
 
@@ -586,6 +766,42 @@ const ChatWindow: FC<Props> = ({
       }
     } else {
       setOfflineQueue((prev) => [...prev, payload]);
+    }
+  };
+
+  const sendEditedMessage = async (): Promise<void> => {
+    if (!editingMessage || !input.trim() || !conversationKey) return;
+    if (!isMessageEditable(editingMessage, user.id)) {
+      setComposerError("This message can no longer be edited.");
+      return;
+    }
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setComposerError("Reconnect to edit this message.");
+      return;
+    }
+
+    try {
+      const encryptedMessage = await encryptMessage(
+        buildTextMessagePayload(input.trim(), editingMessage.replyPreview ?? null),
+        conversationKey,
+        conversationId,
+      );
+
+      ws.send(JSON.stringify({
+        type: "message_edit",
+        messageId: editingMessage.id,
+        conversationId,
+        contentType: "text",
+        encryptedMessage,
+      }));
+
+      setComposerError("");
+      setInput("");
+      setEditingMessage(null);
+    } catch (error) {
+      console.error("Failed to edit message:", error);
+      setComposerError("Failed to edit message.");
     }
   };
 
@@ -607,6 +823,7 @@ const ChatWindow: FC<Props> = ({
     const now = Math.floor(Date.now() / 1000);
     const tempId = `temp-${crypto.randomUUID()}`;
     const localPreviewUrl = URL.createObjectURL(file);
+    const replyPreview = buildReplyContext();
     setUploadingImage(true);
     setComposerError("");
 
@@ -636,7 +853,7 @@ const ChatWindow: FC<Props> = ({
       };
 
       const encryptedMessage = await encryptMessage(
-        JSON.stringify(imagePayload),
+        buildImageMessagePayload(imagePayload, replyPreview),
         conversationKey,
         conversationId,
       );
@@ -652,15 +869,22 @@ const ChatWindow: FC<Props> = ({
         imageFileName: file.name,
         isRead: false,
         createdAt: now,
+        replyToMessageId: replyingTo?.id ?? null,
+        replyPreview,
+        editedAt: null,
+        editVersion: 0,
       };
 
       setMessages((prev: Message[]): Message[] => [...prev, optimisticImageMessage]);
+      setReplyingTo(null);
 
       const payload = JSON.stringify({
         type: "message",
         clientMessageId: tempId,
         conversationId,
         toUserId: selectedUser.id,
+        contentType: "image",
+        replyToMessageId: optimisticImageMessage.replyToMessageId,
         encryptedMessage,
       });
 
@@ -692,6 +916,87 @@ const ChatWindow: FC<Props> = ({
     });
   };
 
+  const handleComposerSubmit: NonNullable<ComponentPropsWithoutRef<"form">["onSubmit"]> = (event) => {
+    event.preventDefault();
+
+    if (editingMessage) {
+      void sendEditedMessage();
+      return;
+    }
+
+    void sendTextMessage();
+  };
+
+  const composerContextTitle = editingMessage
+    ? "Editing message"
+    : `Replying to ${replyingTo?.fromUserId === user.id ? "yourself" : (replyingTo?.fromUsername || selectedUser.username)}`;
+  const composerContextPreview = editingMessage?.message ?? replyingTo?.replyPreview?.text ?? replyingTo?.message ?? "";
+  const inputPlaceholder = uploadingImage
+    ? "Uploading encrypted image..."
+    : editingMessage
+      ? "Edit your message"
+      : "Type a message";
+
+  let messageListContent: JSX.Element;
+  if (loading) {
+    messageListContent = (
+      <div className="loading-state">
+        <div className="loading-spinner"></div>
+        <p>Loading messages...</p>
+      </div>
+    );
+  } else if (messages.length === 0) {
+    messageListContent = (
+      <div className="empty-chat">
+        <div className="empty-chat-icon">👋</div>
+        <p>No messages yet. Say hello!</p>
+      </div>
+    );
+  } else {
+    messageListContent = (
+      <>
+        {messages.map((m, index) => {
+          const previousMessage = index > 0 ? messages[index - 1] : null;
+          const showDaySeparator =
+            !previousMessage || getDayKey(previousMessage.createdAt) !== getDayKey(m.createdAt);
+          const dayLabel = formatDayLabel(m.createdAt);
+
+          return (
+            <Fragment key={m.id}>
+              {showDaySeparator && (
+                <div className="message-day-separator">
+                  <span>{dayLabel}</span>
+                </div>
+              )}
+              <MessageBubble
+                id={m.id}
+                isOwn={m.fromUserId === user.id}
+                message={m.message}
+                contentType={m.contentType}
+                imageUrl={m.imageUrl}
+                imageFileName={m.imageFileName}
+                replyPreview={m.replyPreview}
+                isEdited={Boolean(m.editedAt)}
+                timestamp={m.createdAt}
+                username={m.fromUsername}
+                formatTime={formatTime}
+                status={m.status}
+                actionsOpen={activeActionMessageId === m.id}
+                canReply={!m.id.startsWith("temp-")}
+                canEdit={isMessageEditable(m, user.id)}
+                onToggleActions={() => {
+                  setActiveActionMessageId((currentId) => currentId === m.id ? null : m.id);
+                }}
+                onReply={() => openReplyComposer(m)}
+                onEdit={() => openEditComposer(m)}
+              />
+            </Fragment>
+          );
+        })}
+      </>
+    );
+  }
+
   return (
     <div className="chat-window">
       <div className="chat-header">
@@ -710,84 +1015,68 @@ const ChatWindow: FC<Props> = ({
       </div>
 
       <div className="messages" ref={messageListRef}>
-        {loading ? (
-          <div className="loading-state">
-            <div className="loading-spinner"></div>
-            <p>Loading messages...</p>
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="empty-chat">
-            <div className="empty-chat-icon">👋</div>
-            <p>No messages yet. Say hello!</p>
-          </div>
-        ) : (
-          messages.map((m, index) => {
-            const previousMessage = index > 0 ? messages[index - 1] : null;
-            const showDaySeparator =
-              !previousMessage || getDayKey(previousMessage.createdAt) !== getDayKey(m.createdAt);
-            const dayLabel = formatDayLabel(m.createdAt);
-
-            return (
-              <Fragment key={m.id}>
-                {showDaySeparator && (
-                  <div className="message-day-separator">
-                    <span>{dayLabel}</span>
-                  </div>
-                )}
-                <MessageBubble
-                  isOwn={m.fromUserId === user.id}
-                  message={m.message}
-                  contentType={m.contentType}
-                  imageUrl={m.imageUrl}
-                  imageFileName={m.imageFileName}
-                  timestamp={m.createdAt}
-                  username={m.fromUsername}
-                  formatTime={formatTime}
-                  status={m.status}
-                />
-              </Fragment>
-            );
-          })
-        )}
+        {messageListContent}
         <div ref={messagesEndRef} />
       </div>
 
-      <form className="input-area" onSubmit={sendTextMessage}>
-        <button
-          type="button"
-          className="attach-btn"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={loading || uploadingImage || !conversationKey}
-          aria-label="Attach image"
-        >
-          <ImagePlus size={20} />
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/jpg,image/png"
-          onChange={handleImageSelected}
-          className="hidden-file-input"
-        />
-        <input
-          type="text"
-          value={input}
-          onChange={(e: ChangeEvent<HTMLInputElement>): void => setInput(e.target.value)}
-          placeholder={uploadingImage ? "Uploading encrypted image..." : "Type a message"}
-          disabled={loading || uploadingImage}
-          maxLength={1000}
-          className="message-input"
-          ref={inputRef}
-        />
-        <button
-          type="submit"
-          disabled={!input.trim() || loading || uploadingImage || !conversationKey}
-          className="send-btn"
-          aria-label="Send message"
-        >
-          <Send size={20} />
-        </button>
-      </form>
+      <div className="composer-shell">
+        {(replyingTo || editingMessage) && (
+          <div className="composer-context-banner">
+            <div className="composer-context-icon">
+              {editingMessage ? <Pencil size={16} /> : <Reply size={16} />}
+            </div>
+            <div className="composer-context-copy">
+              <strong>{composerContextTitle}</strong>
+              <span>{composerContextPreview}</span>
+            </div>
+            <button
+              type="button"
+              className="composer-context-close"
+              onClick={clearComposerContext}
+              aria-label="Cancel composer context"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        <form className="input-area" onSubmit={handleComposerSubmit}>
+          <button
+            type="button"
+            className="attach-btn"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading || uploadingImage || !conversationKey || Boolean(editingMessage)}
+            aria-label="Attach image"
+          >
+            <ImagePlus size={20} />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png"
+            onChange={handleImageSelected}
+            className="hidden-file-input"
+          />
+          <input
+            type="text"
+            value={input}
+            onChange={(e: ChangeEvent<HTMLInputElement>): void => setInput(e.target.value)}
+            placeholder={inputPlaceholder}
+            disabled={loading || uploadingImage}
+            maxLength={1000}
+            className="message-input"
+            ref={inputRef}
+          />
+          <button
+            type="submit"
+            disabled={!input.trim() || loading || uploadingImage || !conversationKey}
+            className="send-btn"
+            aria-label={editingMessage ? "Save message edit" : "Send message"}
+          >
+            <Send size={20} />
+          </button>
+        </form>
+      </div>
       {composerError && <div className="composer-error">{composerError}</div>}
     </div>
   );

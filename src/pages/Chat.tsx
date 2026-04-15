@@ -506,6 +506,12 @@ const Chat: FC = (): JSX.Element | null => {
             );
           }
 
+          if (data.type === "message_edited") {
+            globalThis.dispatchEvent(
+              new CustomEvent("websocket:message_edited", { detail: data })
+            );
+          }
+
           if (data.type === "unread_count_update") {
             setUnreadCounts((prev: Map<string, number>) => {
               const updated = new Map(prev);
